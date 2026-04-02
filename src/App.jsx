@@ -24,6 +24,10 @@ function App() {
   const [capturedImages, setCapturedImages] = useState([])
   const lastStateRef = useRef({ dime: null, hands: null })
 
+  const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const handsRef = useRef(null)
+
   const steps = [
     "Left 4 Fingers",
     "Right 4 Fingers",
