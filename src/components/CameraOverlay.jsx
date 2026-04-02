@@ -233,6 +233,11 @@ const CameraOverlay = ({ onCapture, isActive }) => {
            <p className="text-emerald-500 font-black uppercase tracking-[0.2em] text-xs">Analyzing Scan...</p>
         </div>
       )}
+
+      {/* Version Watermark (For Cache Verification) */}
+      <div className="absolute bottom-2 left-4 opacity-20 pointer-events-none">
+        <span className="text-[8px] text-white font-bold uppercase tracking-widest">Manual Mode v1.1</span>
+      </div>
     </div>
   )
 }
