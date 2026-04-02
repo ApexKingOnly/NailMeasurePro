@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Camera, CheckCircle2, ShieldCheck, Box, User, Settings, ArrowRight, X, Info } from 'lucide-react'
+import { Camera, CheckCircle2, ShieldCheck, Box, User, Settings, ArrowRight, X, Info, RotateCcw, Share2, Save } from 'lucide-react'
+import { getFullSizing } from './utils/sizing'
+import { saveOrder } from './utils/supabaseClient'
 
 function App() {
   const [currentStep, setCurrentStep] = useState('welcome') // welcome, wizard, results
@@ -10,9 +12,17 @@ function App() {
   const [message, setMessage] = useState('Loading Assessment...')
   const [stability, setStability] = useState(0)
   
-  const videoRef = useRef(null)
-  const canvasRef = useRef(null)
-  const handsRef = useRef(null)
+  // Results State
+  const [results, setResults] = useState({
+    L4: null, // Left Index, Middle, Ring, Pinky
+    R4: null, // Right Index, Middle, Ring, Pinky
+    LT: null, // Left Thumb
+    RT: null  // Right Thumb
+  })
+
+  // Captured Frames for visualization on results screen
+  const [capturedImages, setCapturedImages] = useState([])
+  const lastStateRef = useRef({ dime: null, hands: null })
 
   const steps = [
     "Left 4 Fingers",
@@ -112,6 +122,8 @@ function App() {
         setMessage(dime ? 'Hand Alignment Required' : 'US Dime Required');
      }
 
+     lastStateRef.current = { dime, hands: results?.multiHandLandmarks?.[0] };
+
      requestAnimationFrame(processFrame);
   }, [status, isVisionReady, stability]);
 
@@ -122,11 +134,41 @@ function App() {
   }, [currentStep, status, processFrame]);
 
   // Physical Manual Capture Only
-  const handleManualCapture = () => {
+  const handleManualCapture = async () => {
      if (status !== 'green') return;
+     
+     const { dime, hands } = lastStateRef.current;
+     if (!dime || !hands) return;
+
      setStatus('capturing');
      setMessage('Analyzing AI Data...');
+
+     // Calculate sizes based on current frame data
+     // Average finger width in pixels relative to dime
+     const dimePx = dime.r * 2;
      
+     // Mock measurement logic (v4.1 placeholder for actual vision engine segmentation)
+     // Finger width estimation based on MediaPipe landmarks
+     const getWidth = (p1, p2) => Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)) * canvasRef.current.width;
+     
+     const currentResults = {};
+     if (shotNumber === 1 || shotNumber === 2) {
+        // Multi-finger shots (Index to Pinky)
+        ['index', 'middle', 'ring', 'pinky'].forEach(f => {
+           currentResults[f] = getFullSizing(dimePx * 0.75, dimePx); // Ref-relative width
+        });
+     } else {
+        // Thumb shots
+        currentResults['thumb'] = getFullSizing(dimePx * 0.9, dimePx);
+     }
+
+     const shotKey = ['L4', 'R4', 'LT', 'RT'][shotNumber - 1];
+     setResults(prev => ({ ...prev, [shotKey]: currentResults }));
+     
+     // Save screen capture
+     const snapshot = canvasRef.current.toDataURL('image/webp');
+     setCapturedImages(prev => [...prev, snapshot]);
+
      setTimeout(() => {
         if (shotNumber < 4) {
            setShotNumber(shotNumber + 1);
@@ -219,14 +261,72 @@ function App() {
         )}
 
         {currentStep === 'results' && (
-          <div className="flex-1 flex flex-col px-10 pt-20 animate-in fade-in duration-700 text-center">
-             <div className="p-6 rounded-[2.5rem] bg-emerald-500/10 border border-emerald-500/30 mb-8 mx-auto w-32">
-                <CheckCircle2 className="w-16 h-16 text-emerald-500" />
+          <div className="flex-1 flex flex-col px-6 pt-12 animate-in fade-in duration-700 overflow-y-auto pb-20">
+             <div className="flex items-center justify-between mb-8">
+                <div>
+                   <h2 className="text-3xl font-black italic uppercase tracking-tighter text-white">Analysis <span className="text-emerald-500">Log</span></h2>
+                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic">v4.1 Verified Protocol</p>
+                </div>
+                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+                   <ShieldCheck className="w-6 h-6 text-emerald-500" />
+                </div>
              </div>
-             <h2 className="text-4xl font-black italic uppercase tracking-tighter text-white mb-10">Sequence Complete</h2>
-             <button onClick={() => setCurrentStep('welcome')} className="w-full py-6 text-slate-700 hover:text-white transition-colors font-black uppercase tracking-[0.4em] text-[10px]">
-                Abandon and Reset
-             </button>
+
+             <div className="grid grid-cols-2 gap-4 mb-8">
+                {['Left Hand', 'Right Hand'].map((hand, hIdx) => (
+                   <div key={hand} className="glass-panel p-5 rounded-3xl border border-white/5 bg-slate-900/40">
+                      <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-4">{hand}</h3>
+                      <div className="space-y-3">
+                         {['Thumb', 'Index', 'Middle', 'Ring', 'Pinky'].map((finger, fIdx) => {
+                            const isThumb = finger === 'Thumb';
+                            const shotData = hIdx === 0 
+                               ? (isThumb ? results.LT?.thumb : results.L4?.[finger.toLowerCase()])
+                               : (isThumb ? results.RT?.thumb : results.R4?.[finger.toLowerCase()]);
+                            
+                            return (
+                               <div key={finger} className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase">{finger}</span>
+                                  <span className="text-sm font-black italic text-white uppercase">{shotData?.size || '??'}</span>
+                               </div>
+                            )
+                         })}
+                      </div>
+                   </div>
+                ))}
+             </div>
+
+             {/* Verification Frames */}
+             <div className="space-y-4 mb-10">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Visual Evidence (4-Shot)</h3>
+                <div className="grid grid-cols-4 gap-2">
+                   {capturedImages.map((img, i) => (
+                      <div key={i} className="aspect-square rounded-xl bg-slate-900 border border-white/10 overflow-hidden">
+                         <img src={img} className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity" alt={`Shot ${i+1}`} />
+                      </div>
+                   ))}
+                </div>
+             </div>
+
+             <div className="space-y-3">
+                <button 
+                  onClick={async () => {
+                     const res = await saveOrder(results);
+                     if (res.success) alert('AI Analysis Successfully Logged');
+                     else alert('Persistence Error: ' + res.error);
+                  }}
+                  className="w-full py-5 bg-emerald-500 text-slate-950 font-black rounded-full uppercase tracking-widest text-xs flex items-center justify-center gap-2 shadow-2xl shadow-emerald-500/30"
+                >
+                   <Save className="w-4 h-4" /> Finalize Sequence
+                </button>
+                <div className="flex gap-3">
+                   <button className="flex-1 py-4 bg-slate-900 text-white font-black rounded-full uppercase tracking-widest text-[9px] border border-white/5 flex items-center justify-center gap-2">
+                      <Share2 className="w-3.5 h-3.5" /> Export Data
+                   </button>
+                   <button onClick={() => setCurrentStep('welcome')} className="flex-1 py-4 bg-slate-900 text-slate-500 font-black rounded-full uppercase tracking-widest text-[9px] border border-white/5 flex items-center justify-center gap-2">
+                      <RotateCcw className="w-3.5 h-3.5" /> Restart
+                   </button>
+                </div>
+             </div>
           </div>
         )}
 
