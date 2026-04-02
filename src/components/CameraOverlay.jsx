@@ -78,20 +78,17 @@ const CameraOverlay = ({ onCapture, mode }) => {
 
     if (dimeDetected && handsDetected && isOptimalDistance) {
       setStabilityCounter(prev => prev + 1)
-      if (stabilityCounter > 30) { // ~1s at 30fps
+      if (stabilityCounter > 30) { 
         setStatus('green')
-        setMessage('Ready! Hold still...')
-        if (stabilityCounter > 60) {
-           handleAutoShutter()
-        }
+        setMessage('READY! TAP BUTTON')
       } else {
-        setMessage('Checking alignment...')
+        setMessage('Hold Still...')
       }
     } else {
       setStabilityCounter(0)
       setStatus('scanning')
       if (!dimeDetected) setMessage('Bring the US Dime into view')
-      else if (!handsDetected) setMessage('Place finger tips inside the box')
+      else if (!handsDetected) setMessage('Insert hand inside the box')
       else if (!isOptimalDistance) setMessage('Adjust distance (Too ' + (dime.r < 40 ? 'Far' : 'Close') + ')')
     }
 
@@ -105,9 +102,11 @@ const CameraOverlay = ({ onCapture, mode }) => {
     }
   }, [status, processFrame])
 
-  const handleAutoShutter = () => {
+  const handleManualCapture = () => {
+     if (status !== 'green') return; // Enforce calibration
+     
      setStatus('capturing')
-     setMessage('Captured! Processing...')
+     setMessage('Captured! Saving...')
      
      // 1s Delay before callback
      setTimeout(() => {
@@ -124,11 +123,11 @@ const CameraOverlay = ({ onCapture, mode }) => {
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full hidden" width={1280} height={720} />
 
       {/* Real-time HUD Layer */}
-      <div className="absolute inset-0 pointer-events-none">
+      <div className="absolute inset-0">
         
         {/* Alignment Guide (NailScale AI 3-Shot Zones) */}
         {mode === 'left' || mode === 'right' ? (
-          <div className="absolute inset-0 border-[60px] border-slate-950/60">
+          <div className="absolute inset-0 border-[60px] border-slate-950/60 pointer-events-none">
             <div className="w-full h-full border-2 border-dashed border-white/20 rounded-[2rem] relative">
               
               {/* Dime Zone */}
@@ -143,7 +142,7 @@ const CameraOverlay = ({ onCapture, mode }) => {
             </div>
           </div>
         ) : (
-          <div className="absolute inset-0 border-[60px] border-slate-950/60">
+          <div className="absolute inset-0 border-[60px] border-slate-950/60 pointer-events-none">
             <div className="w-full h-full border-2 border-dashed border-white/20 rounded-[2rem] flex flex-col items-center justify-center gap-12">
                <div className="w-48 h-32 border-2 border-blue-500/30 rounded-3xl flex items-center justify-center">
                  <p className="text-[10px] text-blue-500 font-black tracking-widest uppercase italic">Both Thumbs Here</p>
@@ -156,7 +155,7 @@ const CameraOverlay = ({ onCapture, mode }) => {
         )}
 
         {/* Global Status HUD */}
-        <div className="absolute top-24 left-1/2 -translate-x-1/2 w-[calc(100%-4rem)] px-6 py-4 glass-panel rounded-3xl border border-white/5 flex items-center gap-4 animate-in fade-in slide-in-from-top-4">
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 w-[calc(100%-4rem)] px-6 py-4 glass-panel rounded-3xl border border-white/5 flex items-center gap-4 animate-in fade-in slide-in-from-top-4 pointer-events-none">
            <div className={`p-2 rounded-2xl ${status === 'green' ? 'bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.5)]' : 'bg-slate-800'}`}>
              {status === 'green' ? <CheckCircle2 className="w-6 h-6 text-slate-950 animate-pulse" /> : <Box className="w-6 h-6 text-slate-400" />}
            </div>
@@ -166,13 +165,25 @@ const CameraOverlay = ({ onCapture, mode }) => {
            </div>
         </div>
 
-        {/* Dynamic Stability Ring (Center) */}
+        {/* MANUAL CAPTURE BUTTON (NailScale AI PRO) */}
         <div className="absolute inset-x-0 bottom-32 flex justify-center">
-          <div className="relative w-20 h-20 rounded-full border-4 border-white/10 flex items-center justify-center">
-             <div className="absolute inset-0 border-4 border-emerald-500 rounded-full transition-all duration-300" 
-                  style={{ clipPath: `inset(${100 - (stabilityCounter * 1.5)}% 0 0 0)` }} />
-             <Camera className={`w-8 h-8 ${status === 'green' ? 'text-emerald-500 scale-125' : 'text-slate-700'} transition-all`} />
-          </div>
+          <button 
+            onClick={handleManualCapture}
+            className={`relative w-24 h-24 rounded-full border-4 transition-all duration-500 flex items-center justify-center group ${
+              status === 'green' 
+                ? 'bg-emerald-500 border-emerald-400 shadow-[0_0_40px_rgba(16,185,129,0.4)] scale-110' 
+                : 'bg-slate-900/40 border-white/10 opacity-50 scale-100'
+            }`}
+          >
+             <div className="absolute inset-0 bg-white/20 rounded-full scale-0 group-active:scale-100 transition-transform duration-300" />
+             <Camera className={`w-10 h-10 ${status === 'green' ? 'text-slate-950' : 'text-slate-500'} transition-colors`} />
+             
+             {/* Progress Border (Only visible when tracking stability) */}
+             {status === 'scanning' && stabilityCounter > 0 && (
+                <div className="absolute inset-0 border-4 border-emerald-500 rounded-full transition-all duration-300" 
+                     style={{ clipPath: `inset(${100 - (stabilityCounter * 3)}% 0 0 0)` }} />
+             )}
+          </button>
         </div>
 
       </div>
