@@ -155,7 +155,7 @@ function App() {
              <h1 className="text-6xl font-black italic tracking-tighter text-white mb-2 leading-tight">
                NailScale <span className="text-emerald-500">AI</span>
              </h1>
-             <p className="text-slate-500 text-sm font-black uppercase tracking-[0.4em] mb-12 italic">v4.0 DEEP MANUAL REBOOT</p>
+             <p className="text-slate-500 text-sm font-black uppercase tracking-[0.4em] mb-12 italic">v4.1 AUDITED | FINAL PROTOCOL</p>
 
              <div className="glass-panel p-8 rounded-[2rem] w-full mb-12 space-y-4 text-left border-emerald-500/10">
                 <h3 className="text-xs font-black text-emerald-500 uppercase tracking-widest px-2">4-Shot Sequence</h3>
