@@ -1,39 +1,29 @@
 /**
- * NailMeasure Pro - Sizing Logic
- * Standard Press-On Sizes (Generic 00-9)
+ * NailScale AI - Sizing Logic
+ * Refined Mapping with +1mm Curvature Buffer logic
  */
 
-const SIZE_MAP = [
-  { size: '00', min: 18.0, max: 19.0 },
-  { size: '0',  min: 17.0, max: 17.9 },
-  { size: '1',  min: 16.0, max: 16.9 },
-  { size: '2',  min: 15.0, max: 15.9 },
-  { size: '3',  min: 14.0, max: 14.9 },
-  { size: '4',  min: 13.0, max: 13.9 },
-  { size: '5',  min: 12.0, max: 12.9 },
-  { size: '6',  min: 11.0, max: 11.9 },
-  { size: '7',  min: 10.0, max: 10.9 },
-  { size: '8',  min: 9.0,  max: 9.9 },
-  { size: '9',  min: 8.0,  max: 8.9 }
-]
-
 /**
- * Converts measured MM width to Press-On size.
- * Adds 1mm buffer for nail curvature.
- * @param {number} mm - Measured width in millimeters
+ * Convert measured width (mm) to standard press-on size (00-9)
+ * Scale: [18mm:00, 17mm:0, 16mm:1, 15mm:2, 14mm:3, 13mm:4, 12mm:5, 11mm:6, 10mm:7, 9mm:8, 8mm:9]
+ * @param {number} mm - Measured raw width in millimeters
  * @returns {string} - Predicted Size (00-9)
  */
 export const mmToSize = (mm) => {
-  const bufferedMM = mm + 1.0;
-  const match = SIZE_MAP.find(s => bufferedMM >= s.min && bufferedMM <= s.max);
+  // Apply +1mm curvature buffer as requested
+  const buffered = mm + 1.0;
   
-  if (!match) {
-    if (bufferedMM > 19.0) return '00';
-    if (bufferedMM < 8.0) return '9';
-    return '?';
-  }
-  
-  return match.size;
+  if (buffered >= 17.5) return '00';
+  if (buffered >= 16.5) return '0';
+  if (buffered >= 15.5) return '1';
+  if (buffered >= 14.5) return '2';
+  if (buffered >= 13.5) return '3';
+  if (buffered >= 12.5) return '4';
+  if (buffered >= 11.5) return '5';
+  if (buffered >= 10.5) return '6';
+  if (buffered >= 9.5) return '7';
+  if (buffered >= 8.5) return '8';
+  return '9';
 }
 
 export const formatResults = (results) => {

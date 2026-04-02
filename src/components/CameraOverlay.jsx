@@ -1,243 +1,189 @@
-import React, { useRef, useEffect, useState } from 'react'
-import { Camera, AlertCircle, CheckCircle2, RotateCcw } from 'lucide-react'
+import React, { useRef, useState, useEffect, useCallback } from 'react'
+import { Camera, AlertCircle, CheckCircle2, RotateCcw, Box, ArrowRight } from 'lucide-react'
+import { useVisionAI } from '../hooks/useVisionAI'
+import { detectDimeAndCalibrate } from '../utils/VisionEngine'
 
-const CameraOverlay = ({ onCapture, isActive }) => {
+const CameraOverlay = ({ onCapture, mode }) => {
+  const { isReady, error, detectHands } = useVisionAI()
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
-  const [stream, setStream] = useState(null)
-  const [status, setStatus] = useState('initializing') // initializing, red, green, capturing
-  const [message, setMessage] = useState('Starting camera...')
+  const [status, setStatus] = useState('initializing') // initializing, prompt, scanning, green, capturing
+  const [message, setMessage] = useState('Calibrating Vision AI...')
   const [stabilityCounter, setStabilityCounter] = useState(0)
 
+  // Start Camera
   useEffect(() => {
-    if (isActive) {
-      startCamera()
-    } else {
-      stopCamera()
-    }
-    return () => stopCamera()
-  }, [isActive])
-
-  const startCamera = async () => {
-    try {
-      setStatus('initializing')
-      setMessage('Requesting Camera...')
-      
-      const constraints = {
-        video: { 
-          facingMode: { ideal: 'environment' }, 
-          width: { ideal: 1280 }, 
-          height: { ideal: 720 } 
-        },
-        audio: false
-      }
-      
-      const newStream = await navigator.mediaDevices.getUserMedia(constraints)
-      setStream(newStream)
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = newStream
-        // Critical for iOS: ensuring play() is called explicitly
-        try {
-          await videoRef.current.play()
-        } catch (e) {
-          console.error("Video play failed:", e)
+    const startCamera = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+        })
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          setStatus('scanning')
         }
+      } catch (err) {
+        console.error('Camera Error:', err)
+        setStatus('error')
+        setMessage('Camera access denied. Please check settings.')
       }
-      
-      setStatus('red')
-      setMessage('Detecting Dime...')
-    } catch (err) {
-      console.error("Camera error:", err)
-      setStatus('error')
-      setMessage(err.name === 'NotAllowedError' ? 'Access Denied: Grant Permission' : 'Camera Error: Check Permissions')
     }
-  }
+    startCamera()
+  }, [])
 
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop())
-      setStream(null)
-    }
-  }
+  // The Vision Processing Loop
+  const processFrame = useCallback(async () => {
+    if (status === 'capturing' || !videoRef.current || !canvasRef.current || !isReady) return
 
-  // Vision Loop (Conceptual for now, will integrate OpenCV.js calls later)
-  useEffect(() => {
-    let frameId;
-    const processFrame = () => {
-      if (status !== 'error' && status !== 'capturing' && status !== 'analyzing' && videoRef.current && videoRef.current.readyState === 4) {
-        // Pseudo-logic for "Green Light"
-        const isDimeDetected = true; 
-        const dimeWidth = 200; 
-        
-        if (isDimeDetected && dimeWidth >= 150 && dimeWidth <= 300) {
-          setStatus('green')
-          setMessage('READY! TAKE THE PIC')
-        } else {
-          setStatus('red')
-          setMessage(dimeWidth < 150 ? 'Move Closer' : dimeWidth > 300 ? 'Move Further' : 'Searching for Dime...')
-        }
-      }
-      frameId = requestAnimationFrame(processFrame)
-    }
-    
-    if (isActive && status !== 'capturing' && status !== 'analyzing') {
-      frameId = requestAnimationFrame(processFrame)
-    }
-    return () => cancelAnimationFrame(frameId)
-  }, [isActive, status, stabilityCounter])
-
-  const handleCaptureClick = () => {
-    if (status !== 'green' || status === 'analyzing') return
-    
-    setStatus('capturing')
-    setMessage('Capturing...')
-
-    const canvas = canvasRef.current
     const video = videoRef.current
-    if (canvas && video) {
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      const ctx = canvas.getContext('2d')
-      ctx.drawImage(video, 0, 0)
-      const dataUrl = canvas.toDataURL('image/jpeg')
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
+    
+    // Draw current video frame to canvas
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    
+    // 1. Detect Dime with OpenCV.js (Dime Scaler)
+    let dime = null;
+    if (window.cv) {
+      const mat = window.cv.imread(canvas)
+      dime = detectDimeAndCalibrate(window.cv, mat)
       
-      // Verification Step
-      setTimeout(() => {
-        setStatus('analyzing')
-        setMessage('Vision Guard: Analyzing quality...')
+      if (dime) {
+        ctx.beginPath()
+        ctx.arc(dime.x, dime.y, dime.r, 0, 2 * Math.PI)
+        ctx.strokeStyle = '#10b981'
+        ctx.lineWidth = 4
+        ctx.stroke()
         
-        // Simulating quality check
-        setTimeout(() => {
-          onCapture(dataUrl)
-          setStatus('green')
-        }, 1200)
-      }, 500)
+        ctx.font = 'bold 12px Inter'
+        ctx.fillStyle = '#10b981'
+        ctx.fillText('FIXED SCALE [US DIME]', dime.x - 50, dime.y - dime.r - 10)
+      }
+      mat.delete()
     }
+
+    // 2. Detect Hands with MediaPipe (AI Segmentation)
+    const results = await detectHands(video)
+    if (results && results.multiHandLandmarks) {
+      // Draw minimal hand skeleton for status
+      results.multiHandLandmarks.forEach(hand => {
+        window.drawConnectors(ctx, hand, window.HAND_CONNECTIONS, { color: '#ffffff20', lineWidth: 1 })
+      })
+    }
+
+    // 3. GREEN LIGHT LOGIC (NailScale AI Protocol)
+    const dimeDetected = dime !== null;
+    const handsDetected = results && results.multiHandLandmarks?.length > 0;
+    const isOptimalDistance = dimeDetected && dime.r >= 40 && dime.r <= 80;
+
+    if (dimeDetected && handsDetected && isOptimalDistance) {
+      setStabilityCounter(prev => prev + 1)
+      if (stabilityCounter > 30) { // ~1s at 30fps
+        setStatus('green')
+        setMessage('Ready! Hold still...')
+        if (stabilityCounter > 60) {
+           handleAutoShutter()
+        }
+      } else {
+        setMessage('Checking alignment...')
+      }
+    } else {
+      setStabilityCounter(0)
+      setStatus('scanning')
+      if (!dimeDetected) setMessage('Bring the US Dime into view')
+      else if (!handsDetected) setMessage('Place finger tips inside the box')
+      else if (!isOptimalDistance) setMessage('Adjust distance (Too ' + (dime.r < 40 ? 'Far' : 'Close') + ')')
+    }
+
+    requestAnimationFrame(processFrame)
+  }, [status, isReady, detectHands, stabilityCounter])
+
+  useEffect(() => {
+    if (status === 'scanning' || status === 'green') {
+      const frameId = requestAnimationFrame(processFrame)
+      return () => cancelAnimationFrame(frameId)
+    }
+  }, [status, processFrame])
+
+  const handleAutoShutter = () => {
+     setStatus('capturing')
+     setMessage('Captured! Processing...')
+     
+     // 1s Delay before callback
+     setTimeout(() => {
+       const canvas = canvasRef.current
+       onCapture(canvas.toDataURL('image/jpeg'))
+       setStatus('scanning')
+       setStabilityCounter(0)
+     }, 1000)
   }
 
   return (
-    <div className="relative w-full aspect-[3/4] rounded-[2.5rem] overflow-hidden bg-slate-900 border-2 border-white/5 shadow-2xl transition-all">
-      {/* Background Video */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="w-full h-full object-cover"
-      />
-      
-      {/* Error / Manual Start State */}
-      {(status === 'error' || status === 'initializing') && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/90 text-center px-8">
-          <div className="w-20 h-20 rounded-full bg-emerald-500/10 flex items-center justify-center mb-6">
-            <Camera className="w-10 h-10 text-emerald-500" />
-          </div>
-          <h3 className="text-xl font-bold mb-2">Camera Access Required</h3>
-          <p className="text-slate-400 text-sm mb-8">{message}</p>
-          <button 
-            onClick={startCamera}
-            className="w-full py-4 px-6 bg-emerald-500 text-slate-950 font-bold rounded-2xl shadow-xl shadow-emerald-500/20 active:scale-95 transition-all"
-          >
-            Allow Camera
-          </button>
-        </div>
-      )}
-      
-      {/* High-Precision HUD & Placement Overlays */}
+    <div className="relative w-full h-full overflow-hidden bg-black">
+      <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" autoPlay playsInline muted />
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full hidden" width={1280} height={720} />
+
+      {/* Real-time HUD Layer */}
       <div className="absolute inset-0 pointer-events-none">
         
-        {/* Dime Placement Target */}
-        <div className="absolute top-[40%] left-1/2 -translate-x-1/2 -translate-y-1/2">
-          <div className={`w-36 h-36 rounded-full border-4 transition-all duration-500 flex flex-col items-center justify-center ${
-            status === 'green' ? 'border-emerald-500 scale-110 green-glow' : 'border-white/30 bg-white/5'
-          }`}>
-             <div className="absolute -top-8 px-3 py-1 bg-slate-900 border border-white/10 rounded-full">
-               <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest whitespace-nowrap">Dime Target</span>
-             </div>
-             {status !== 'green' && <div className="w-2 h-2 rounded-full bg-white/20 animate-ping" />}
-          </div>
-        </div>
+        {/* Alignment Guide (NailScale AI 3-Shot Zones) */}
+        {mode === 'left' || mode === 'right' ? (
+          <div className="absolute inset-0 border-[60px] border-slate-950/60">
+            <div className="w-full h-full border-2 border-dashed border-white/20 rounded-[2rem] relative">
+              
+              {/* Dime Zone */}
+              <div className="absolute top-1/4 left-1/4 w-32 h-32 border-2 border-emerald-500/30 rounded-full flex items-center justify-center">
+                <p className="text-[10px] text-emerald-500 font-black tracking-widest uppercase">Place Dime</p>
+              </div>
 
-        {/* Finger Placement Target */}
-        <div className="absolute top-[40%] left-1/2 -translate-x-1/2 translate-y-24">
-           <div className={`w-32 h-52 border-2 border-dashed rounded-3xl transition-all duration-500 flex flex-col items-center justify-start pt-6 ${
-             status === 'green' ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-white/20'
-           }`}>
-             <div className="px-3 py-1 bg-slate-900 border border-white/10 rounded-full">
-               <span className="text-[9px] font-black text-slate-300 uppercase tracking-widest whitespace-nowrap">Finger Zone</span>
-             </div>
+              {/* Finger Zone */}
+              <div className="absolute top-1/3 right-1/4 w-1/3 h-1/2 border-2 border-blue-500/30 rounded-3xl flex items-center justify-center">
+                <p className="text-[10px] text-blue-500 font-black tracking-widest uppercase mb-auto mt-4 px-2 text-center italic">Insert 4 Fingers [Tips Only]</p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="absolute inset-0 border-[60px] border-slate-950/60">
+            <div className="w-full h-full border-2 border-dashed border-white/20 rounded-[2rem] flex flex-col items-center justify-center gap-12">
+               <div className="w-48 h-32 border-2 border-blue-500/30 rounded-3xl flex items-center justify-center">
+                 <p className="text-[10px] text-blue-500 font-black tracking-widest uppercase italic">Both Thumbs Here</p>
+               </div>
+               <div className="w-32 h-32 border-2 border-emerald-500/30 rounded-full flex items-center justify-center">
+                 <p className="text-[10px] text-emerald-500 font-black tracking-widest uppercase">Place Dime</p>
+               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Global Status HUD */}
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 w-[calc(100%-4rem)] px-6 py-4 glass-panel rounded-3xl border border-white/5 flex items-center gap-4 animate-in fade-in slide-in-from-top-4">
+           <div className={`p-2 rounded-2xl ${status === 'green' ? 'bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.5)]' : 'bg-slate-800'}`}>
+             {status === 'green' ? <CheckCircle2 className="w-6 h-6 text-slate-950 animate-pulse" /> : <Box className="w-6 h-6 text-slate-400" />}
+           </div>
+           <div className="flex-1">
+              <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em] mb-0.5">NailScale AI Scan Mode</p>
+              <h4 className={`text-sm font-bold tracking-tight uppercase ${status === 'green' ? 'text-emerald-400' : 'text-white'}`}>{message}</h4>
            </div>
         </div>
 
-        {/* Orientation Hint */}
-        <p className="absolute top-32 w-full text-center text-[10px] text-slate-500 font-bold uppercase tracking-[0.3em] opacity-40">
-          Align Flat on Surface
-        </p>
-      </div>
-
-      {/* Top Banner (Status) */}
-      <div className={`absolute top-6 inset-x-6 py-3 px-6 rounded-2xl flex items-center gap-3 glass-panel border transition-all duration-500 ${
-        status === 'green' ? 'border-emerald-500 bg-emerald-500/10' : 
-        status === 'red' ? 'border-amber-500 bg-amber-500/10' : 'border-white/5'
-      }`}>
-        {status === 'green' ? (
-          <CheckCircle2 className="w-5 h-5 text-emerald-500 animate-pulse" />
-        ) : (
-          <AlertCircle className={`w-5 h-5 ${status === 'red' ? 'text-amber-500' : 'text-slate-500'}`} />
-        )}
-        <span className={`text-sm font-bold tracking-wide uppercase ${
-          status === 'green' ? 'text-emerald-500' : 
-          status === 'red' ? 'text-amber-500' : 'text-slate-400'
-        }`}>
-          {message}
-        </span>
-      </div>
-
-      {/* Hidden Capture Canvas */}
-      <canvas ref={canvasRef} className="hidden" />
-
-      {/* Manual Capture HUD (Bottom) */}
-      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 w-full px-8 flex flex-col items-center gap-6">
-        <div className="flex items-center justify-center gap-8">
-          {/* Main Capture Button */}
-          <button 
-            onClick={handleCaptureClick}
-            disabled={status !== 'green'}
-            className={`group relative p-6 rounded-full transition-all transform active:scale-90 ${
-              status === 'green' 
-                ? 'bg-emerald-500 scale-110 shadow-2xl shadow-emerald-500/50' 
-                : 'bg-slate-800 opacity-40 cursor-not-allowed'
-            }`}
-          >
-            {status === 'green' && (
-              <div className="absolute -inset-2 bg-emerald-500 rounded-full animate-ping opacity-20" />
-            )}
-            <Camera className={`w-8 h-8 ${status === 'green' ? 'text-slate-950' : 'text-slate-500'}`} />
-          </button>
+        {/* Dynamic Stability Ring (Center) */}
+        <div className="absolute inset-x-0 bottom-32 flex justify-center">
+          <div className="relative w-20 h-20 rounded-full border-4 border-white/10 flex items-center justify-center">
+             <div className="absolute inset-0 border-4 border-emerald-500 rounded-full transition-all duration-300" 
+                  style={{ clipPath: `inset(${100 - (stabilityCounter * 1.5)}% 0 0 0)` }} />
+             <Camera className={`w-8 h-8 ${status === 'green' ? 'text-emerald-500 scale-125' : 'text-slate-700'} transition-all`} />
+          </div>
         </div>
 
-        {/* Reset Button */}
-        <button 
-          onClick={startCamera}
-          className="p-3 rounded-full bg-slate-950/50 backdrop-blur-md border border-white/10 text-white hover:bg-slate-800 transition-all pointer-events-auto"
-        >
-          <RotateCcw className="w-5 h-5" />
-        </button>
       </div>
 
-      {/* Analyzing Overlay */}
-      {status === 'analyzing' && (
-        <div className="absolute inset-0 z-30 bg-slate-950/60 backdrop-blur-md flex flex-col items-center justify-center animate-in fade-in duration-300">
-           <div className="w-16 h-16 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-4" />
-           <p className="text-emerald-500 font-black uppercase tracking-[0.2em] text-xs">Analyzing Scan...</p>
+      {status === 'initializing' && (
+        <div className="absolute inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center text-center px-12">
+           <div className="w-16 h-16 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mb-6" />
+           <h2 className="text-2xl font-black text-white italic mb-2 tracking-tight uppercase underline decoration-emerald-500 decoration-3">Initializing Vision AI</h2>
+           <p className="text-xs text-slate-500 font-bold tracking-widest uppercase leading-relaxed">Loading MediaPipe Models & OpenCV.js Runtime...</p>
         </div>
       )}
-
-      {/* Version Watermark (For Cache Verification) */}
-      <div className="absolute bottom-2 left-4 opacity-20 pointer-events-none">
-        <span className="text-[8px] text-white font-bold uppercase tracking-widest">Manual Mode v1.1</span>
-      </div>
     </div>
   )
 }

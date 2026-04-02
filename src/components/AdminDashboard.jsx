@@ -1,132 +1,178 @@
 import React, { useState } from 'react'
-import { ArrowLeft, User, Calendar, ExternalLink, ShieldCheck, Search, Filter } from 'lucide-react'
-
-// Mock Data
-const MOCK_ORDERS = [
-  { id: 101, name: 'Jessica Smith', date: '2026-04-01', status: 'Pending', email: 'jess.s@example.com' },
-  { id: 102, name: 'Michael Brown', date: '2026-03-31', status: 'Verified', email: 'm.brown@example.com' },
-  { id: 103, name: 'Emily Davis', date: '2026-03-30', status: 'Shipped', email: 'emilyd@example.com' }
-]
+import { FileText, Camera, ShieldCheck, ChevronRight, Download, Eye, X, Filter, BarChart2 } from 'lucide-react'
 
 const AdminDashboard = ({ onBack }) => {
   const [selectedOrder, setSelectedOrder] = useState(null)
   
+  // Mock Data (Representing Supabase Query)
+  const orders = [
+    {
+      id: 'NS-9812',
+      customer: 'Jane Doe',
+      email: 'jane@example.com',
+      date: '2026-04-02',
+      sizes: {
+        thumbs: [1, 1],
+        index: [3, 4],
+        middle: [2, 2],
+        ring: [4, 4],
+        pinky: [7, 7]
+      },
+      status: 'pending',
+      photo: 'https://images.unsplash.com/photo-1632345031435-81971cc5d816?auto=format&fit=crop&q=80&w=2000'
+    },
+    {
+      id: 'NS-9811',
+      customer: 'Mike Ross',
+      email: 'miker@gmail.com',
+      date: '2026-04-01',
+      sizes: {
+        thumbs: [0, 0],
+        index: [2, 2],
+        middle: [1, 1],
+        ring: [3, 3],
+        pinky: [6, 6]
+      },
+      status: 'verified',
+      photo: 'https://images.unsplash.com/photo-1604654894611-6973b376cbde?auto=format&fit=crop&q=80&w=2000'
+    }
+  ]
+
   return (
-    <div className="space-y-6 pt-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-center gap-4">
-        <button onClick={onBack} className="p-2 -ml-2 text-slate-400 hover:text-white transition-colors">
-          <ArrowLeft className="w-6 h-6" />
-        </button>
-        <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">Admin Hub</h2>
-      </div>
-
-      {/* Stats Quick View */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="glass-panel p-4 rounded-3xl border-white/5">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">New Orders</p>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-white">12</span>
-            <span className="text-[10px] text-emerald-500 font-bold">+4 Today</span>
-          </div>
+    <div className="fixed inset-0 z-[200] bg-slate-950 text-white overflow-y-auto animate-in fade-in duration-500 pb-24">
+      {/* Header */}
+      <div className="sticky top-0 bg-slate-950/80 backdrop-blur-xl border-b border-white/5 px-8 py-6 z-50 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+           <div className="bg-emerald-500/20 p-3 rounded-2xl border border-emerald-500/30">
+              <ShieldCheck className="w-6 h-6 text-emerald-500" />
+           </div>
+           <div>
+             <h2 className="text-xl font-black uppercase italic tracking-widest text-emerald-500">Admin Dashboard</h2>
+             <p className="text-[10px] text-slate-500 font-bold tracking-widest uppercase">Technician Control v2.0 [NailScale AI]</p>
+           </div>
         </div>
-        <div className="glass-panel p-4 rounded-3xl border-white/5">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Total Verified</p>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-black text-white">482</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Search & Filter */}
-      <div className="flex gap-2">
-        <div className="flex-1 relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <input 
-            type="text" 
-            placeholder="Search name..." 
-            className="w-full bg-slate-900 border border-white/5 rounded-2xl py-3 pl-11 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-          />
-        </div>
-        <button className="p-3 bg-slate-900 border border-white/5 rounded-2xl text-slate-500 hover:text-white transition-all">
-          <Filter className="w-5 h-5" />
+        <button onClick={onBack} className="p-2 hover:bg-white/5 rounded-full transition-colors">
+          <X className="w-6 h-6 text-slate-500" />
         </button>
       </div>
 
-      {/* Order List */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-bold text-slate-400 px-2 uppercase tracking-wide">Recent Orders</h3>
-        {MOCK_ORDERS.map((order) => (
-          <button 
-            key={order.id}
-            onClick={() => setSelectedOrder(order)}
-            className={`w-full text-left glass-panel p-5 rounded-3xl border-white/5 hover:border-emerald-500/20 transition-all flex items-center justify-between group ${
-              selectedOrder?.id === order.id ? 'border-emerald-500/50 bg-emerald-500/5' : ''
-            }`}
-          >
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-slate-800/50 border border-white/5 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                <User className="w-6 h-6 text-slate-400" />
-              </div>
-              <div className="space-y-0.5">
-                <p className="font-bold text-slate-100">{order.name}</p>
-                <div className="flex items-center gap-3 text-[10px] text-slate-500 font-bold uppercase tracking-wider">
-                  <Calendar className="w-3 h-3" />
-                  <span>{order.date}</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-              order.status === 'Verified' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-blue-500/10 text-blue-500'
-            }`}>
-              {order.status}
-            </div>
-          </button>
-        ))}
-      </div>
+      <main className="px-8 mt-10 space-y-12">
+        
+        {/* Order Statistics */}
+        <div className="grid grid-cols-2 gap-4">
+           <div className="glass-panel p-6 rounded-3xl border-white/5 bg-slate-900/40">
+             <div className="flex justify-between items-center mb-1">
+               <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Active Orders</p>
+               <BarChart2 className="w-4 h-4 text-emerald-500" />
+             </div>
+             <p className="text-3xl font-black text-white italic">147</p>
+           </div>
+           <div className="glass-panel p-6 rounded-3xl border-white/5 bg-slate-900/40">
+             <div className="flex justify-between items-center mb-1">
+               <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Avg Precision</p>
+               <CheckCircle2 className="w-4 h-4 text-blue-500" />
+             </div>
+             <p className="text-3xl font-black text-white italic">99.4%</p>
+           </div>
+        </div>
 
-      {/* Order Detail Modal (Simple Overlay) */}
+        {/* Order List */}
+        <div className="space-y-6">
+           <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400">Incoming Scans</h3>
+              <Filter className="w-5 h-5 text-slate-600 cursor-pointer" />
+           </div>
+           
+           <div className="space-y-4">
+             {orders.map(order => (
+               <div 
+                 key={order.id}
+                 onClick={() => setSelectedOrder(order)}
+                 className="group glass-panel p-6 rounded-3xl border border-white/5 bg-slate-900/20 hover:bg-slate-900/60 transition-all cursor-pointer flex items-center justify-between"
+               >
+                 <div className="flex items-center gap-5">
+                    <div className="relative">
+                       <img src={order.photo} className="w-14 h-14 rounded-2xl object-cover border border-white/10 group-hover:scale-110 transition-transform duration-500" alt="Customer" />
+                       <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-slate-950 ${order.status === 'verified' ? 'bg-emerald-500' : 'bg-orange-500 animate-pulse'}`} />
+                    </div>
+                    <div>
+                       <h4 className="font-black text-white tracking-tight italic uppercase">{order.customer}</h4>
+                       <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{order.id} • {order.date}</p>
+                    </div>
+                 </div>
+                 <ChevronRight className="w-6 h-6 text-slate-700 group-hover:text-emerald-500 translate-x-0 group-hover:translate-x-2 transition-all" />
+               </div>
+             ))}
+           </div>
+        </div>
+      </main>
+
+      {/* Verification Modal (Full Detail View) */}
       {selectedOrder && (
-        <div className="fixed inset-0 z-[60] flex items-end justify-center px-4 pb-8 pointer-events-none">
-          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm pointer-events-auto" onClick={() => setSelectedOrder(null)} />
-          <div className="relative w-full max-w-sm glass-panel rounded-[2rem] p-8 border-white/10 pointer-events-auto animate-in slide-in-from-bottom-full duration-500">
-            <div className="flex justify-between items-start mb-6">
-              <div className="space-y-1">
-                <h2 className="text-2xl font-bold">{selectedOrder.name}</h2>
-                <p className="text-sm text-emerald-500 font-medium">#{selectedOrder.id}</p>
+        <div className="fixed inset-0 z-[300] bg-slate-950/95 backdrop-blur-2xl flex flex-col p-8 animate-in zoom-in duration-300">
+           <div className="flex justify-between items-center mb-10">
+              <div>
+                <h2 className="text-2xl font-black uppercase italic tracking-tighter text-white">Full Sizing Analysis</h2>
+                <p className="text-[10px] text-emerald-500 font-black uppercase tracking-[0.4em] mb-1">Verify AI Verification Masks</p>
               </div>
-              <div className="p-3 bg-emerald-500/10 rounded-2xl">
-                <ShieldCheck className="w-6 h-6 text-emerald-500" />
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-3 text-center">
-                <div className="bg-slate-900 border border-white/5 p-4 rounded-2xl">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Left Thumb</p>
-                  <p className="text-xl font-black">Size 0</p>
-                  <p className="text-[10px] text-slate-600">17.2mm</p>
-                </div>
-                <div className="bg-slate-900 border border-white/5 p-4 rounded-2xl">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1">Left Index</p>
-                  <p className="text-xl font-black">Size 5</p>
-                  <p className="text-[10px] text-slate-600">13.8mm</p>
-                </div>
-              </div>
-
-              <button className="w-full py-4 px-6 bg-slate-100 hover:bg-white text-slate-950 font-bold rounded-2xl transition-all flex items-center justify-center gap-2">
-                <Search className="w-5 h-5" />
-                View Verification Photos
+              <button onClick={() => setSelectedOrder(null)} className="bg-white/5 p-3 rounded-2xl hover:bg-white/10 text-slate-400 transition-all">
+                 <X className="w-8 h-8" />
               </button>
+           </div>
+
+           <div className="flex-1 overflow-y-auto space-y-12">
               
-              <button 
-                onClick={() => setSelectedOrder(null)}
-                className="w-full py-3 px-6 text-slate-400 font-medium hover:text-white transition-all"
-              >
-                Close View
+              {/* AI Verification Photo Overlay */}
+              <div className="space-y-4">
+                 <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">Composite Verification Shot</h3>
+                 <div className="relative rounded-[2.5rem] overflow-hidden border-2 border-white/5 bg-slate-900 group">
+                    <img src={selectedOrder.photo} className="w-full h-96 object-cover opacity-60 transition-transform duration-[20s] linear animate-pulse-slow" alt="Nail Photo" />
+                    
+                    {/* Simulated AI Overlays (Green Rectangles for widesty horiz. span) */}
+                    <div className="absolute top-1/4 left-1/3 w-8 h-12 border-2 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.5)] rounded-lg flex items-center justify-center">
+                       <p className="text-[8px] bg-emerald-500 text-slate-950 font-black px-1 mt-14 rounded">14.1mm</p>
+                    </div>
+                    <div className="absolute top-1/3 left-1/2 w-9 h-14 border-2 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.5)] rounded-lg flex items-center justify-center">
+                       <p className="text-[8px] bg-emerald-500 text-slate-950 font-black px-1 mt-16 rounded">14.9mm</p>
+                    </div>
+                    
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent" />
+                 </div>
+              </div>
+
+              {/* Final Sizing Chart */}
+              <div className="space-y-6 pb-24">
+                 <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">Final Sizing Record</h3>
+                 <div className="grid grid-cols-2 gap-4">
+                    {Object.entries(selectedOrder.sizes).map(([finger, sizes]) => (
+                      <div key={finger} className="glass-panel p-6 rounded-3xl border-white/5 bg-slate-900/40">
+                         <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest mb-1">{finger}</p>
+                         <div className="flex gap-4">
+                           <div className="flex-1 bg-white/5 p-3 rounded-xl border border-white/5">
+                              <p className="text-[8px] text-slate-500 font-bold uppercase mb-1">Left</p>
+                              <p className="text-xl font-black text-white italic">Size {sizes[0]}</p>
+                           </div>
+                           <div className="flex-1 bg-white/5 p-3 rounded-xl border border-white/5">
+                              <p className="text-[8px] text-slate-500 font-bold uppercase mb-1">Right</p>
+                              <p className="text-xl font-black text-white italic">Size {sizes[1]}</p>
+                           </div>
+                         </div>
+                      </div>
+                    ))}
+                 </div>
+              </div>
+
+           </div>
+
+           {/* Actions (Bottom) */}
+           <div className="fixed bottom-0 inset-x-0 p-8 glass-panel bg-slate-950/80 backdrop-blur-xl border-t border-white/5 flex gap-4">
+              <button className="flex-1 py-5 bg-slate-900 hover:bg-slate-800 text-slate-400 font-black rounded-2xl text-xs uppercase tracking-widest border border-white/10 transition-all flex items-center justify-center gap-2">
+                 <Download className="w-5 h-5" /> Export Data
               </button>
-            </div>
-          </div>
+              <button className="flex-1 py-5 bg-emerald-500 text-slate-950 font-black rounded-2xl text-xs uppercase tracking-widest shadow-2xl shadow-emerald-500/30 active:scale-95 transition-all flex items-center justify-center gap-2">
+                 <ShieldCheck className="w-5 h-5" /> Mark Verified
+              </button>
+           </div>
         </div>
       )}
     </div>

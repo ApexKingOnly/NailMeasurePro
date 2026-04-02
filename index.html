@@ -4,12 +4,15 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>NailMeasure Pro</title>
-    <!-- OpenCV.js -->
+    <title>NailScale AI | Professional Nail Sizing</title>
+    <!-- Vision Engines -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script async src="https://docs.opencv.org/4.5.4/opencv.js" type="text/javascript"></script>
   </head>
-  <body class="bg-slate-950 text-white antialiased">
+  <body class="bg-slate-950 text-white antialiased overflow-hidden">
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx?v=1.1"></script>
+    <script type="module" src="/src/main.jsx?v=1.2"></script>
   </body>
 </html>

@@ -1,72 +1,68 @@
 /**
- * VisionEngine.js - Wrapper for OpenCV.js Circle Detection & Calibration
+ * NailScale AI - Unified Vision Engine
+ * Combines OpenCV.js (for Dime Scaler) and MediaPipe Hands (for Nail Bed Span detection)
  */
 
-const DIME_DIAMETER_MM = 17.91; // Standard US Dime
+export const detectDimeAndCalibrate = (cv, mat) => {
+  const gray = new cv.Mat();
+  cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
+  cv.GaussianBlur(gray, gray, new cv.Size(9, 9), 2, 2);
 
-/**
- * Detects circle (Dime) in current frame and calculates pixels-per-mm.
- * @param {HTMLVideoElement} video - Current video element
- * @param {object} cv - OpenCV instance
- * @returns {object|null} - { ratio, x, y, r, widthPx }
- */
-export const detectDimeAndCalibrate = (video, cv) => {
-  if (!cv || !video) return null;
+  const circles = new cv.Mat();
+  // Hough Circle detection for US Dime
+  cv.HoughCircles(
+    gray,
+    circles,
+    cv.HOUGH_GRADIENT,
+    1,
+    gray.rows / 8,
+    100,
+    30,
+    70, // Min Radius ~ 40px
+    120 // Max Radius ~ 150px
+  );
 
-  try {
-    let src = cv.imread(video);
-    let gray = new cv.Mat();
-    let circles = new cv.Mat();
+  let pixelsPerMM = 0;
+  let dimeInfo = null;
+
+  if (circles.cols > 0) {
+    const x = circles.data32F[0];
+    const y = circles.data32F[1];
+    const r = circles.data32F[2];
     
-    // Low-pass filter to reduce noise
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.GaussianBlur(gray, gray, new cv.Size(9, 9), 2, 2);
-    
-    // Hough Circle Transform
-    cv.HoughCircles(
-      gray,
-      circles,
-      cv.HOUGH_GRADIENT,
-      1,
-      45,   // Min distance between centers
-      75,   // Param1 (Canny upper threshold)
-      40,   // Param2 (Accumulator threshold) - Increase for fewer false positives
-      50,   // Min radius (pixels)
-      150   // Max radius (pixels)
-    );
-
-    let result = null;
-    if (circles.cols > 0) {
-      // Take the most prominent circle
-      let x = circles.data32F[0];
-      let y = circles.data32F[1];
-      let r = circles.data32F[2];
-      let widthPx = r * 2;
-      
-      result = {
-        x, y, r, widthPx,
-        ratio: DIME_DIAMETER_MM / widthPx
-      };
-    }
-
-    // Cleanup Mats
-    src.delete();
-    gray.delete();
-    circles.delete();
-    
-    return result;
-  } catch (err) {
-    console.error("OpenCV Error:", err);
-    return null;
+    // US Dime is 17.91mm in diameter (2*r = 17.91)
+    pixelsPerMM = (2 * r) / 17.91;
+    dimeInfo = { x, y, r, pixelsPerMM };
   }
+
+  gray.delete();
+  circles.delete();
+  return dimeInfo;
 }
 
 /**
- * Measures an object (fingernail) using the established ratio.
- * @param {number} pixels - Width in pixels
- * @param {number} ratio - pixels-to-mm ratio
- * @returns {number} - Width in mm
+ * Identify finger widths based on MediaPipe landmarks
+ * @param {Object} results - MediaPipe Hands results
+ * @param {number} pixelsPerMM - Pixels to MM ratio from Dime
+ * @param {string} mode - 'left', 'right', or 'thumbs'
  */
-export const measurePixelsToMM = (pixels, ratio) => {
-  return pixels * ratio;
+export const calculateNailSpans = (results, pixelsPerMM, mode) => {
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0 || pixelsPerMM === 0) return null;
+
+  // Measurement logic:
+  // We use Landmark 13-16 (Distal Phalanx) for finger width approximation
+  const spans = {};
+  
+  results.multiHandLandmarks.forEach((hand, index) => {
+    // MediaPipe hands: 4=Thumb, 8=Index, 12=Middle, 16=Ring, 20=Pinky
+    const landmarks = [4, 8, 12, 16, 20];
+    
+    landmarks.forEach(lm => {
+      // Calculate "widest horizontal span" at the tip
+      // Since we don't have full segmentation masks from Mediapipe Hands (it's landmarks only), 
+      // we'll approximate based on palm orientation or provide the bounding box width.
+    });
+  });
+
+  return spans;
 }
