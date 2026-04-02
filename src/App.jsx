@@ -48,7 +48,7 @@ function App() {
                 NailScale <span className="text-emerald-500">AI</span>
               </h1>
               <p className="text-slate-400 text-lg leading-relaxed font-medium">
-                High-Precision Vision Sizing 💍💅
+                High-Precision Vision Sizing 💍💅 [BUILD-CHECK-LIVE]
               </p>
             </div>
 
