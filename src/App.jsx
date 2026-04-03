@@ -235,9 +235,9 @@ function App() {
          
          setVisionHeartbeat(Date.now());
 
-         // V18.1: PRECISION SWAP (Dime Top, Nail Bottom) & Zoom-Out Scaling
-         const dRing = { x: 0.5, y: 0.18, r: 0.11 }; // Center-Top for Dime
-         const nBox = { x: 0.32, y: 0.65, w: 0.36, h: 0.25 }; // Center-Bottom for Nail
+         // V23.0: ATOMIC SIDE-BY-SIDE (Nail Left, Dime Right) at Tip-Level
+         const nBox = { x: 0.12, y: 0.35, w: 0.32, h: 0.35 }; // Surgical Left
+         const dRing = { x: 0.78, y: 0.52, r: 0.10 }; // Ring Right
 
          const drawSurgicalHUD = () => {
             const w = rect.width;
@@ -313,16 +313,17 @@ function App() {
                            tip.y > nBox.y && tip.y < nBox.y + nBox.h);
                 });
                 
-                if (dimeInZone && fingerInZone) {
-                  const sizing = getFullSizing(20, dimePixels, hand, rect.width, rect.height);
-                  setMeasurement({ mm: sizing.mm, size: sizing.size });
-                  setMessage("LOCKED - READY TO CAPTURE");
-                  setIsStableSignal(true); // V19: Override to Allow Instant Capture
-               } else {
-                  setIsStableSignal(false);
-                  setMeasurement(null);
-                  setMessage("ALIGN DIME (TOP) & NAIL (BOTTOM)");
-               }
+                // V23: MANUAL OVERDRIVE (Activation based solely on Dime calibration)
+                if (dimeInZone) {
+                   const sizing = getFullSizing(20, dimePixels, hand, rect.width, rect.height);
+                   setMeasurement({ mm: sizing.mm, size: sizing.size });
+                   setIsStableSignal(true); // V23 Override: Dime-only activation
+                   setMessage("TARGET LOCKED");
+                } else {
+                   setIsStableSignal(false);
+                   setMessage("ALIGN DIME (RIGHT) & NAIL (LEFT)");
+                   setMeasurement(null);
+                }
 
                src.delete(); gray.delete(); circles.delete();
             } catch (cvErr) {
@@ -352,7 +353,8 @@ function App() {
 
   // Phase 4: Capture & Sequence (Surgical Refactor)
   const captureShot = () => {
-    if (!measurement || !isStableSignal) return
+    // V23: Forced Activation - Allow capture as long as 'isStableSignal' (Dime Lock) is true
+    if (!isStableSignal) return
     
     // 1. Shutter & Haptic Feedback
     if (navigator.vibrate) navigator.vibrate(15);
@@ -396,7 +398,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V22.0 UNIVERSAL FINGER ENGINE | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V23.0 ATOMIC SIDE-BY-SIDE | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
