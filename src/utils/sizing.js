@@ -56,11 +56,44 @@ export const mmToNailSize = (mm) => {
   return bestMatch.size;
 };
 
-export const getFullSizing = (pixelWidth, dimePixels) => {
+export const getFullSizing = (pixelWidth, dimePixels, handLandmarks, canvasWidth, canvasHeight) => {
   const mm = calculateMM(pixelWidth, dimePixels);
   const size = mmToNailSize(mm);
+  
+  let guidance = "Position Hand...";
+  let isStable = false;
+
+  if (handLandmarks) {
+    // 1. Centering Check
+    const wrist = handLandmarks[0];
+    const x = wrist.x;
+    const y = wrist.y;
+
+    if (x < 0.3) guidance = "Move Hand Right ⮕";
+    else if (x > 0.7) guidance = "⬅ Move Hand Left";
+    else if (y < 0.2) guidance = "Move Hand Down ⬇";
+    else if (y > 0.8) guidance = "⬆ Move Hand Up";
+    else if (!dimePixels || dimePixels < 10) {
+       guidance = "Place Dime in Circle ⭕";
+    } else {
+       // 2. Tilt/Orientation Check (Simple Plane Delta)
+       // Landmarks: 0 (Wrist), 5 (Index MCP), 17 (Pinky MCP)
+       const mcpY = (handLandmarks[5].y + handLandmarks[17].y) / 2;
+       const tiltY = handLandmarks[0].y - mcpY; // Positive = Tilted Down, Negative = Tilted Up
+
+       if (tiltY > 0.15) guidance = "Tilt Camera Up ⤊";
+       else if (tiltY < -0.25) guidance = "Tilt Camera Down ⤋";
+       else {
+          guidance = "PERFECT SIGNAL ✨";
+          isStable = true;
+       }
+    }
+  }
+
   return {
     mm: mm.toFixed(2),
-    size: size
+    size: size,
+    guidance: guidance,
+    isStable: isStable
   };
 };

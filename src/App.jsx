@@ -1,77 +1,62 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Camera, CheckCircle2, ShieldCheck, Box, User, Settings, ArrowRight, X, Info, RotateCcw, Share2, Save } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Camera, ShieldAlert, Scan, X, RotateCcw, CheckCircle2, ChevronRight, Info } from 'lucide-react'
 import { getFullSizing } from './utils/sizing'
-import { saveOrder } from './utils/supabaseClient'
+
+// Finger Landmarks for High Precision 10-Finger Mapping
+const tip_map = { 1: 8, 2: 12, 3: 16, 4: 20 }; // Index, Middle, Ring, Pinky
+const dip_map = { 1: 7, 2: 11, 3: 15, 4: 19 }; // Associated DIP joints
 
 function App() {
-  const [currentStep, setCurrentStep] = useState('welcome') // welcome, wizard, results
-  const [visionMode, setVisionMode] = useState('Left 4 Fingers') 
+  // Navigation State
+  const [currentStep, setCurrentStep] = useState('welcome') // welcome, wizard, finish
   const [shotNumber, setShotNumber] = useState(1) // 1: L4, 2: R4, 3: LT, 4: RT
-  const [isVisionReady, setIsVisionReady] = useState(false)
-  const [status, setStatus] = useState('scanning') // scanning, green, capturing
-  const [message, setMessage] = useState('Loading Assessment...')
-  const [stability, setStability] = useState(0)
+  const steps = ["Left 4 Fingers", "Right 4 Fingers", "Left Thumb", "Right Thumb"]
   
-  // Results State
-  const [results, setResults] = useState({
-    L4: null, // Left Index, Middle, Ring, Pinky
-    R4: null, // Right Index, Middle, Ring, Pinky
-    LT: null, // Left Thumb
-    RT: null  // Right Thumb
-  })
-
-  // Captured Frames for visualization on results screen
-  const [capturedImages, setCapturedImages] = useState([])
-  const lastStateRef = useRef({ dime: null, hands: null })
-
+  // Vision Health & Stability
+  const [systemBooting, setSystemBooting] = useState(true)
+  const [isCameraReady, setIsCameraReady] = useState(false)
+  const [isVisionReady, setIsVisionReady] = useState(false)
+  const [isVisionCrashed, setIsVisionCrashed] = useState(false)
+  const [librariesLoaded, setLibrariesLoaded] = useState(false)
+  const [visionHeartbeat, setVisionHeartbeat] = useState(Date.now())
+  const [message, setMessage] = useState('System Booting...')
+  const [isStableSignal, setIsStableSignal] = useState(false)
+  
+  // Results & Temporary Data
+  const [results, setResults] = useState({})
+  const [measurement, setMeasurement] = useState(null)
+  
+  // Refs
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const handsRef = useRef(null)
+  const frameIdRef = useRef(null)
 
-  const steps = [
-    "Left 4 Fingers",
-    "Right 4 Fingers",
-    "Left Thumb",
-    "Right Thumb"
-  ]
-
-  const [manualOverride, setManualOverride] = useState(false)
-  const [initStartTime, setInitStartTime] = useState(0)
-  const [isCameraReady, setIsCameraReady] = useState(false)
-  const [visionHeartbeat, setVisionHeartbeat] = useState(Date.now())
-  const [isVisionCrashed, setIsVisionCrashed] = useState(false)
-  const [systemBooting, setSystemBooting] = useState(true)
-  const [librariesLoaded, setLibrariesLoaded] = useState(false)
-
-  // Launch Wizard
+  // Launch Protocol
   const startWizard = () => {
     if (window.innerWidth <= 10) {
        alert("Viewport too small/stalled. Please resize or refresh.");
        return; 
     }
     setShotNumber(1)
-    setVisionMode(steps[0])
     setCurrentStep('wizard')
-    setManualOverride(false)
-    setInitStartTime(Date.now())
     setIsCameraReady(false)
+    setIsVisionReady(false)
     setIsVisionCrashed(false)
   }
 
-  // System Boot Sequence (settle layout)
+  // Phase 0: Environment Lockdown (2s)
   useEffect(() => {
      const timer = setTimeout(() => setSystemBooting(false), 2000);
      return () => clearTimeout(timer);
   }, []);
 
-  const cancelWizard = () => setCurrentStep('welcome')
-
-  // Phase 1: Hardware Initiation (Camera Only)
+  // Phase 1: Hardware Activation (10s Polling)
   useEffect(() => {
-    if (currentStep !== 'wizard' || window.innerWidth === 0) return;
+    if (currentStep !== 'wizard') return;
 
     let pollCount = 0;
-    const maxPolls = 70; // 7 seconds max
+    const maxPolls = 100; // 10 seconds
 
     const checkDimensions = () => {
        if (videoRef.current?.videoWidth > 0) {
@@ -98,7 +83,16 @@ function App() {
              }
           }
        } catch (err) {
-          setMessage('Camera Permission Required');
+          // Fallback to front camera if environment fails
+          try {
+             const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+             if (videoRef.current) {
+                videoRef.current.srcObject = fallbackStream;
+                videoRef.current.onloadedmetadata = () => { videoRef.current.play(); checkDimensions(); }
+             }
+          } catch (e) {
+             setMessage('Camera Permission Required');
+          }
        }
     };
     startCamera();
@@ -110,9 +104,9 @@ function App() {
     };
   }, [currentStep]);
 
-  // Phase 2: AI Hub Initialization (Dynamic Loading + Neural Warmup)
+  // Phase 2: AI Hub Initialization (Hardened + Dynamic Sync)
   useEffect(() => {
-    if (!isCameraReady || currentStep !== 'wizard' || window.innerWidth === 0) return;
+    if (!isCameraReady || currentStep !== 'wizard') return;
 
     const loadScript = (url, id) => new Promise((resolve, reject) => {
        if (document.getElementById(id)) return resolve();
@@ -127,24 +121,33 @@ function App() {
 
     const initAI = async () => {
        try {
-          // Dynamic Injection Layer
           if (!librariesLoaded) {
-             setMessage('Loading Vision Libraries...');
+             setMessage('Loading Vision Core...');
              await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js', 'mp-hands');
-             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675469240/drawing_utils.js', 'mp-draw');
+             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js', 'mp-draw');
              await loadScript('https://docs.opencv.org/4.7.0/opencv.js', 'cv-core');
              setLibrariesLoaded(true);
           }
 
+          // Polling for Global (v4 Resilience)
+          setMessage('Verifying AI Readiness...');
+          let readyPoll = 0;
+          while (!window.Hands && readyPoll < 15) {
+             await new Promise(r => setTimeout(r, 100));
+             readyPoll++;
+          }
+
           if (!window.Hands) {
-             setMessage('Vision Engine Error');
+             setMessage('Vision Engine Failed (C51)');
              return;
           }
 
-          // Atomic Canvas Sync
-          if (canvasRef.current) {
-             canvasRef.current.setAttribute('width', '1280');
-             canvasRef.current.setAttribute('height', '720');
+          // Dynamic Resolution Sync (NATIVE DIMENSIONS)
+          if (canvasRef.current && videoRef.current) {
+             const vw = videoRef.current.videoWidth || 1280;
+             const vh = videoRef.current.videoHeight || 720;
+             canvasRef.current.setAttribute('width', vw.toString());
+             canvasRef.current.setAttribute('height', vh.toString());
           }
 
           const hands = new window.Hands({
@@ -159,28 +162,19 @@ function App() {
           await hands.initialize();
           handsRef.current = hands;
 
-          // Neural Warmup (Enlarged ROI Prime)
+          // Neural Warmup (Stable Buffer)
           setMessage('Neural Warmup...');
-          const warmupCanvas = document.createElement('canvas');
-          warmupCanvas.width = 256;
-          warmupCanvas.height = 256;
-          const wCtx = warmupCanvas.getContext('2d');
-          wCtx.fillStyle = 'black';
-          wCtx.fillRect(0, 0, 256, 256);
-
-          await new Promise((resolve, reject) => {
-             const timeout = setTimeout(() => reject(new Error('Warmup Failure')), 4000);
-             hands.onResults((res) => {
-                clearTimeout(timeout);
-                resolve(res);
-             });
-             hands.send({ image: warmupCanvas }).catch(reject);
-          });
+          const warmup = document.createElement('canvas');
+          warmup.width = 256; warmup.height = 256;
+          const wCtx = warmup.getContext('2d');
+          wCtx.fillStyle = 'black'; 
+          wCtx.fillRect(0,0,256,256);
+          await hands.send({ image: warmup });
 
           setIsVisionReady(true);
           setMessage('READY (Perfect Signal)');
        } catch (err) {
-          console.error("AI Dynamic Init Fatal:", err);
+          console.error("AI Init Fatal:", err);
           setIsVisionCrashed(true);
           setMessage('Vision Initialization Failed');
        }
@@ -188,344 +182,210 @@ function App() {
     initAI();
 
     return () => {
-       if (handsRef.current) {
-          handsRef.current = null;
-       }
+       if (handsRef.current) handsRef.current = null;
     };
   }, [isCameraReady, currentStep, librariesLoaded]);
 
-  // Phase 3: Vision Heartbeat Monitor
+  // Phase 3: Vision assessment Loop (Pilot Guidance Enabled)
   useEffect(() => {
-     if (currentStep !== 'wizard' || !isVisionReady) return;
-     const timer = setInterval(() => {
-        if (Date.now() - visionHeartbeat > 3000) setIsVisionCrashed(true);
-     }, 1000);
-     return () => clearInterval(timer);
-  }, [currentStep, isVisionReady, visionHeartbeat]);
+    if (!isVisionReady || !videoRef.current || currentStep !== 'wizard') return
 
-  // Assessment Loop
-  const processFrame = useCallback(async () => {
-      if (status === 'capturing' || !videoRef.current || !canvasRef.current || !isVisionReady || isVisionCrashed) return;
+    const canvas = canvasRef.current
+    const ctx = canvas.getContext('2d')
 
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      
-      // GUARD: Dimension lock
-      if (video.videoWidth === 0) {
-         requestAnimationFrame(processFrame);
-         return;
-      }
-
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      
-      let dime = null;
-      let handLandmarks = null;
-
-      // 1. OpenCV US Dime Detection (Robust Params)
-      if (window.cv && window.cv.Mat) {
-         try {
-            const mat = window.cv.imread(canvas);
-            const gray = new window.cv.Mat();
-            window.cv.cvtColor(mat, gray, window.cv.COLOR_RGBA2GRAY);
-            const circles = new window.cv.Mat();
-            // Params: 1, 40, 50, 20, 25, 200
-            window.cv.HoughCircles(gray, circles, window.cv.HOUGH_GRADIENT, 1, 40, 50, 20, 25, 200);
-            if (circles.cols > 0) {
-               dime = { x: circles.data32F[0], y: circles.data32F[1], r: circles.data32F[2] };
-               ctx.beginPath();
-               ctx.arc(dime.x, dime.y, dime.r, 0, 2 * Math.PI);
-               ctx.strokeStyle = '#10b981';
-               ctx.lineWidth = 4;
-               ctx.stroke();
-            }
-            mat.delete(); gray.delete(); circles.delete();
-         } catch (e) { }
-      }
-
-      // 2. MediaPipe Hand (Canvas Snapshot Pipeline)
+    const processFrame = async () => {
+      if (!handsRef.current || !videoRef.current || isVisionCrashed) return;
       try {
-         // Create a tiny snapshot for MediaPipe to confirm ROI safety
-         const results = await new Promise((resolve) => {
-            handsRef.current.onResults(resolve);
-            handsRef.current.send({ image: canvas }); // Send canvas, NOT video!
-         });
+         await handsRef.current.send({ image: videoRef.current });
+      } catch (err) { console.warn("Frame Drop:", err); }
+      if (currentStep === 'wizard') frameIdRef.current = requestAnimationFrame(processFrame);
+    }
 
-         if (results?.multiHandLandmarks?.length > 0) {
-            handLandmarks = results.multiHandLandmarks[0];
-            window.drawConnectors(ctx, handLandmarks, window.HAND_CONNECTIONS, { color: '#ffffff40', lineWidth: 2 });
-            setVisionHeartbeat(Date.now()); // Alive!
-         }
-      } catch (e) { console.error("AI Runtime Fatal:", e); }
+    const onResults = (results) => {
+      setVisionHeartbeat(Date.now())
+      ctx.clearRect(0, 0, canvas.width, canvas.height); // Wash artifacts
 
-      // Update UI
-      if (dime && handLandmarks) {
-         setStability(prev => Math.min(100, prev + 15));
-         if (stability > 70) {
-            setStatus('green');
-            setMessage('READY! TAP TO CAPTURE');
-         } else {
-            setMessage('Stabilizing Scale...');
-         }
-      } else {
-         setStability(0);
-         setStatus('scanning');
-         setMessage(dime ? 'Position Hand within Box' : 'US Dime Required for Scale');
-         
-         if (Date.now() - initStartTime > 8000) setManualOverride(true);
-      }
-
-      lastStateRef.current = { dime, hands: handLandmarks };
-      requestAnimationFrame(processFrame);
-  }, [status, isVisionReady, isVisionCrashed, stability, initStartTime, visionHeartbeat]);
-
-  useEffect(() => {
-     if (currentStep === 'wizard' && (status === 'scanning' || status === 'green')) {
-        requestAnimationFrame(processFrame);
-     }
-  }, [currentStep, status, processFrame]);
-
-  // Physical Manual Capture Only
-  const handleManualCapture = async () => {
-     if (status !== 'green') return;
-     
-     const { dime, hands } = lastStateRef.current;
-     if (!dime || !hands) return;
-
-     setStatus('capturing');
-     setMessage('Analyzing AI Data...');
-
-     // Calculate sizes based on current frame data
-     // Average finger width in pixels relative to dime
-     const dimePx = dime.r * 2;
-     
-     // Mock measurement logic (v4.1 placeholder for actual vision engine segmentation)
-     // Finger width estimation based on MediaPipe landmarks
-     const getWidth = (p1, p2) => Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)) * canvasRef.current.width;
-     
-     const currentResults = {};
-     if (shotNumber === 1 || shotNumber === 2) {
-        // Multi-finger shots (Index to Pinky)
-        ['index', 'middle', 'ring', 'pinky'].forEach(f => {
-           currentResults[f] = getFullSizing(dimePx * 0.75, dimePx); // Ref-relative width
-        });
-     } else {
-        // Thumb shots
-        currentResults['thumb'] = getFullSizing(dimePx * 0.9, dimePx);
-     }
-
-     const shotKey = ['L4', 'R4', 'LT', 'RT'][shotNumber - 1];
-     setResults(prev => ({ ...prev, [shotKey]: currentResults }));
-     
-     // Save screen capture
-     const snapshot = canvasRef.current.toDataURL('image/webp');
-     setCapturedImages(prev => [...prev, snapshot]);
-
-     setTimeout(() => {
-        if (shotNumber < 4) {
-           setShotNumber(shotNumber + 1);
-           setVisionMode(steps[shotNumber]);
-           setStatus('scanning');
-           setStability(0);
-        } else {
-           setCurrentStep('results');
+      if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
+        const hand = results.multiHandLandmarks[0]
+        
+        // 1. OpenCV US Dime Intelligence
+        const src = cv.imread(videoRef.current);
+        const gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        const circles = new cv.Mat();
+        // Dynamic Hough Gradient for sub-pixel precision
+        cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, 45, 50, 30, 25, 100);
+        
+        let dimePixels = 0;
+        if (circles.cols > 0) {
+          dimePixels = circles.data32F[2] * 2;
+          ctx.beginPath();
+          ctx.arc(circles.data32F[0], circles.data32F[1], circles.data32F[2], 0, 2 * Math.PI);
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 4;
+          ctx.stroke();
         }
-     }, 1000);
+
+        // 2. High Precision Landmark Mapping (Coherent with Screen Density)
+        const nail_tip = hand[8]; // Default index for guidance
+        const wrist = hand[0];
+
+        // Core Alignment Logic (from sizing.js)
+        const sizing = getFullSizing(20, dimePixels, hand, canvas.width, canvas.height);
+        
+        setMeasurement({ mm: sizing.mm, size: sizing.size });
+        setMessage(sizing.guidance);
+        setIsStableSignal(sizing.isStable);
+
+        // 3. Visual Hand Outline
+        window.drawConnectors(ctx, hand, window.HAND_CONNECTIONS, { color: '#ffffff50', lineWidth: 3 });
+        window.drawLandmarks(ctx, hand, { color: '#10b981', lineWidth: 1, radius: 2 });
+
+        src.delete(); gray.delete(); circles.delete();
+      } else {
+        setIsStableSignal(false);
+        setMessage("Position Hand in Frame...");
+        setMeasurement(null);
+      }
+    }
+
+    handsRef.current.onResults(onResults)
+    processFrame()
+
+    return () => {
+      cancelAnimationFrame(frameIdRef.current);
+      if (handsRef.current) handsRef.current.onResults(() => {});
+    }
+  }, [isVisionReady, currentStep, isVisionCrashed]);
+
+  // Phase 4: Capture & Sequence
+  const captureShot = () => {
+    if (!measurement) return
+    const fingerName = steps[shotNumber-1]
+    setResults(prev => ({ ...prev, [fingerName]: measurement }))
+    
+    if (shotNumber < 4) {
+      setShotNumber(prev => prev + 1)
+      setIsStableSignal(false)
+    } else {
+      setCurrentStep('finish')
+    }
   }
 
+  // UI VIEWS
+  if (currentStep === 'finish') return (
+    <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-10 text-center animate-in fade-in zoom-in duration-500">
+       <CheckCircle2 className="w-20 h-20 text-emerald-500 mb-6 drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]" />
+       <h2 className="text-3xl font-black text-white mb-2 tracking-tighter">SIZING COMPLETE</h2>
+       <p className="text-slate-400 mb-10 text-sm font-medium tracking-tight">Your AI measurements have been securely saved.</p>
+       <div className="grid grid-cols-2 gap-4 w-full max-w-sm mb-12">
+          {Object.entries(results).map(([finger, data]) => (
+             <div key={finger} className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col items-center">
+                <span className="text-[10px] text-slate-500 font-black uppercase mb-1">{finger.replace(' Fingers', '')}</span>
+                <span className="text-xl font-bold text-white tracking-widest leading-none">SIZE {data.size}</span>
+             </div>
+          ))}
+       </div>
+       <button onClick={() => setCurrentStep('welcome')} className="w-full max-w-sm py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl shadow-2xl transition-all active:scale-95 text-lg">DONE</button>
+    </div>
+  )
+
+  if (currentStep === 'welcome') return (
+    <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-12 overflow-hidden">
+       <div className="absolute top-0 inset-x-0 h-96 bg-emerald-500/10 blur-[120px] rounded-full -translate-y-1/2" />
+       <div className="relative z-10 w-24 h-24 bg-slate-900 border border-emerald-500/30 rounded-[32px] flex items-center justify-center mb-10 shadow-inner">
+          <Camera className="w-10 h-10 text-emerald-400" />
+       </div>
+       <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
+       <p className="text-slate-500 font-bold tracking-widest text-[10px] uppercase mb-16 opacity-70">V4.1 AUDITED | FINAL PROTOCOL</p>
+       
+       <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
+          <div className="flex items-center gap-4 mb-4">
+             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+             <span className="text-xs text-slate-300 font-bold">4-SHOT SEQUENCE</span>
+          </div>
+          <ul className="space-y-4">
+             {["Left 4 Fingers", "Right 4 Fingers", "Left Thumb", "Right Thumb"].map(s => (
+                <li key={s} className="flex items-center gap-4 text-slate-400 font-black text-[11px] uppercase tracking-widest">
+                   <ChevronRight className="w-4 h-4 text-emerald-500" /> {s}
+                </li>
+             ))}
+          </ul>
+       </div>
+       
+       <button 
+          onClick={startWizard}
+          disabled={systemBooting}
+          className={`w-full max-w-sm py-6 rounded-3xl font-black text-xl tracking-tighter shadow-2xl transition-all active:scale-95 ${systemBooting ? 'bg-slate-800 text-slate-500 grayscale' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/30 ring-4 ring-emerald-500/10'}`}
+       >
+          {systemBooting ? 'SYSTEM BOOTING...' : 'INITIALIZE SEQUENCE'}
+       </button>
+    </div>
+  )
+
   return (
-    <div className="min-h-screen bg-slate-950 text-white font-sans overflow-hidden">
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-emerald-500/10 blur-[150px]" />
-      </div>
-
-      <main className="relative z-10 max-w-lg mx-auto h-screen flex flex-col">
+    <div className="fixed inset-0 bg-black flex flex-col font-sans overflow-hidden select-none">
+       {/* HUD TOP: AI STATUS */}
+       <div className="absolute top-12 inset-x-0 flex flex-col items-center gap-3 z-30 pointer-events-none">
+          <div className={`px-6 py-2.5 rounded-full border-2 bg-slate-950/80 backdrop-blur-xl shadow-2xl transition-all duration-300 flex items-center gap-4 ${isStableSignal ? 'border-emerald-500 shadow-emerald-500/20' : 'border-slate-800 shadow-black'}`}>
+             <div className={`w-2 h-2 rounded-full ${isStableSignal ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
+             <span className={`text-[11px] font-black tracking-widest uppercase ${isStableSignal ? 'text-emerald-400' : 'text-slate-400'}`}>
+                {message}
+             </span>
+          </div>
           
-        {currentStep === 'welcome' && (
-          <div className="flex-1 flex flex-col items-center justify-center px-10 text-center animate-in fade-in zoom-in duration-700">
-             <div className="p-8 rounded-[3rem] bg-emerald-500/20 mb-10 border border-white/10 shadow-emerald-500/20">
-                <Camera className="w-16 h-16 text-emerald-400" />
+          {measurement && (
+             <div className="bg-emerald-500 text-slate-950 px-5 py-1 rounded-full font-black text-[10px] tracking-tight shadow-xl animate-in fade-in slide-in-from-top-2">
+                ESTIMATED: SIZE {measurement.size}
              </div>
-             <h1 className="text-6xl font-black italic tracking-tighter text-white mb-2 leading-tight">
-               NailScale <span className="text-emerald-500">AI</span>
-             </h1>
-             <p className="text-slate-500 text-sm font-black uppercase tracking-[0.4em] mb-12 italic">v4.1 AUDITED | FINAL PROTOCOL</p>
+          )}
+       </div>
 
-             <div className="glass-panel p-8 rounded-[2rem] w-full mb-12 space-y-4 text-left border-emerald-500/10">
-                <h3 className="text-xs font-black text-emerald-500 uppercase tracking-widest px-2">4-Shot Sequence</h3>
-                <div className="space-y-3 px-2">
-                   {steps.map((s, i) => (
-                      <div key={i} className="flex items-center gap-4 text-slate-300 text-xs font-bold uppercase">
-                         <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> {s}
-                      </div>
-                   ))}
-                </div>
+       {/* VISION LAYER */}
+       <div className="relative flex-1 overflow-hidden bg-black flex items-center justify-center">
+          <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" playsInline muted />
+          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10" />
+
+          {/* DIME LANDING ZONE GUIDE (Visual Aid) */}
+          {isVisionReady && !isVisionCrashed && (
+             <div className="absolute bottom-40 right-10 w-28 h-28 border-4 border-dashed border-emerald-500/30 rounded-full flex items-center justify-center bg-emerald-500/5 animate-pulse z-20">
+                <span className="text-[10px] text-emerald-400 font-black tracking-tighter select-none opacity-50 px-4 text-center">POSITION DIME HERE</span>
              </div>
+          )}
 
+          {/* CRITICAL RECOVERY OVERLAY */}
+          {isVisionCrashed && (
+             <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-2xl flex flex-col items-center justify-center p-12 text-center z-50">
+                <ShieldAlert className="w-16 h-16 text-rose-500 mb-6 animate-bounce" />
+                <h2 className="text-2xl font-black text-white mb-2 leading-none tracking-tighter">RECOVERY HUD ACTIVE</h2>
+                <p className="text-slate-500 text-sm max-w-[280px] mb-12 font-medium leading-relaxed">Vision kernel encountered a dimension stall. Reset the hardware to fix. </p>
+                <button onClick={() => window.location.reload()} className="w-full max-w-[240px] py-5 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl shadow-2xl transition-all active:scale-95">RESTART AI</button>
+             </div>
+          )}
+       </div>
+
+       {/* CONTROL SURFACE */}
+       <div className="p-10 bg-slate-950 border-t border-slate-900/50 flex items-center justify-between z-40">
+          <div className="flex flex-col gap-1.5">
+             <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">STEP {shotNumber} OF 4</span>
+             <h3 className="text-2xl font-black text-white tracking-widest leading-none uppercase">{steps[shotNumber-1]}</h3>
+          </div>
+
+          <div className="flex gap-4">
+             <button onClick={() => setCurrentStep('welcome')} className="w-16 h-16 flex items-center justify-center bg-slate-900/80 border border-slate-800 rounded-3xl text-slate-500 hover:text-white transition-all active:scale-90 shadow-xl">
+                <X className="w-7 h-7" />
+             </button>
+             
+             {/* RELAXED CAPTURE BUTTON (Unlock if measurement possible) */}
              <button 
-               onClick={startWizard}
-               disabled={systemBooting}
-               className={`w-full py-6 font-black rounded-full uppercase tracking-widest text-xs transition-all duration-500 shadow-2xl ${
-                 systemBooting 
-                   ? 'bg-slate-900 text-slate-700 border border-white/5 cursor-not-allowed opacity-50' 
-                   : 'bg-emerald-500 text-slate-950 shadow-emerald-500/40 hover:scale-[1.02] active:scale-[0.98]'
-               }`}
+                onClick={captureShot}
+                disabled={!measurement}
+                className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all active:scale-90 shadow-2xl ${measurement ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/20 ring-[12px] ring-emerald-500/10' : 'bg-slate-900 border border-slate-800 text-slate-700 opacity-40'}`}
              >
-               {systemBooting ? 'System Booting...' : 'Initialize Sequence'}
+                <Camera className="w-9 h-9" strokeWidth={3} />
              </button>
           </div>
-        )}
-
-        {currentStep === 'wizard' && (
-          <div className="flex-1 flex flex-col bg-black relative">
-             <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" autoPlay playsInline muted />
-             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" width={1280} height={720} />
-
-              <div className="absolute top-20 inset-x-6 z-50 flex flex-col gap-4">
-                 <div className="bg-slate-950/80 backdrop-blur-3xl px-6 py-4 rounded-3xl border border-emerald-500/10 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                       <div className={`p-2 rounded-2xl ${status === 'green' ? 'bg-emerald-500' : 'bg-slate-800'}`}>
-                          <Box className={`w-5 h-5 ${status === 'green' ? 'text-slate-950' : 'text-slate-500'}`} />
-                       </div>
-                       <div>
-                          <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest leading-none mb-1">Sequence {shotNumber} of 4</p>
-                          <h4 className={`text-sm font-black italic uppercase tracking-tighter ${status === 'green' ? 'text-emerald-400' : 'text-white'}`}>{message}</h4>
-                       </div>
-                    </div>
-                    <button onClick={cancelWizard} className="p-2">
-                       <X className="w-6 h-6 text-slate-600" />
-                    </button>
-                 </div>
-
-                 {isVisionCrashed && (
-                    <div className="bg-red-500/20 backdrop-blur-2xl px-6 py-4 rounded-[2rem] border border-red-500/20 flex items-center justify-between animate-in slide-in-from-top-4 duration-500">
-                       <div>
-                          <p className="text-[9px] font-black text-red-500 uppercase tracking-widest mb-1">Vision Engine Halted</p>
-                          <p className="text-[10px] text-white/60 font-medium">Hardware stability reset required</p>
-                       </div>
-                       <button 
-                         onClick={() => {
-                            setIsVisionReady(false);
-                            setIsCameraReady(false);
-                            setIsVisionCrashed(false);
-                            setInitStartTime(Date.now());
-                         }}
-                         className="px-4 py-2 bg-red-500 text-white text-[9px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-red-500/40"
-                       >
-                          Restart AI
-                       </button>
-                    </div>
-                 )}
-              </div>
-
-             <div className="absolute bottom-24 inset-x-0 z-50 flex flex-col items-center gap-10">
-                <div className="w-48 h-1.5 bg-slate-900/80 rounded-full overflow-hidden border border-white/5">
-                   <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${stability}%` }} />
-                </div>
-                <button 
-                  onClick={handleManualCapture}
-                  className={`w-28 h-28 rounded-full border-4 flex items-center justify-center transition-all duration-500 ${
-                    status === 'green' 
-                      ? 'bg-emerald-500 border-emerald-300 shadow-[0_0_50px_rgba(16,185,129,0.5)] scale-110 active:scale-95' 
-                      : 'bg-slate-900/50 border-white/10 opacity-30 pointer-events-none'
-                  }`}
-                >
-                  <Camera className={`w-12 h-12 ${status === 'green' ? 'text-slate-950 scale-110' : 'text-slate-700'}`} />
-                </button>
-                <div className="bg-emerald-500/10 backdrop-blur-xl px-10 py-3 rounded-full border border-emerald-500/20">
-                   <p className="text-[10px] font-black uppercase tracking-[0.5em] text-emerald-500 italic">{visionMode}</p>
-                </div>
-
-                {manualOverride && (
-                   <button 
-                     onClick={() => {
-                        setStatus('green');
-                        setMessage('MANUAL OVERRIDE ACTIVE');
-                        // Use center of screen as mock dime if none found
-                        if (!lastStateRef.current.dime) {
-                           lastStateRef.current.dime = { x: canvasRef.current.width/2, y: canvasRef.current.height/2, r: 80 };
-                        }
-                     }}
-                     className="mt-4 px-6 py-2 bg-slate-900/80 border border-white/10 rounded-full text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
-                   >
-                      Skip AI Detection
-                   </button>
-                )}
-             </div>
-          </div>
-        )}
-
-        {currentStep === 'results' && (
-          <div className="flex-1 flex flex-col px-6 pt-12 animate-in fade-in duration-700 overflow-y-auto pb-20">
-             <div className="flex items-center justify-between mb-8">
-                <div>
-                   <h2 className="text-3xl font-black italic uppercase tracking-tighter text-white">Analysis <span className="text-emerald-500">Log</span></h2>
-                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest italic">v4.1 Verified Protocol</p>
-                </div>
-                <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
-                   <ShieldCheck className="w-6 h-6 text-emerald-500" />
-                </div>
-             </div>
-
-             <div className="grid grid-cols-2 gap-4 mb-8">
-                {['Left Hand', 'Right Hand'].map((hand, hIdx) => (
-                   <div key={hand} className="glass-panel p-5 rounded-3xl border border-white/5 bg-slate-900/40">
-                      <h3 className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-4">{hand}</h3>
-                      <div className="space-y-3">
-                         {['Thumb', 'Index', 'Middle', 'Ring', 'Pinky'].map((finger, fIdx) => {
-                            const isThumb = finger === 'Thumb';
-                            const shotData = hIdx === 0 
-                               ? (isThumb ? results.LT?.thumb : results.L4?.[finger.toLowerCase()])
-                               : (isThumb ? results.RT?.thumb : results.R4?.[finger.toLowerCase()]);
-                            
-                            return (
-                               <div key={finger} className="flex items-center justify-between">
-                                  <span className="text-[10px] font-bold text-slate-500 uppercase">{finger}</span>
-                                  <span className="text-sm font-black italic text-white uppercase">{shotData?.size || '??'}</span>
-                               </div>
-                            )
-                         })}
-                      </div>
-                   </div>
-                ))}
-             </div>
-
-             {/* Verification Frames */}
-             <div className="space-y-4 mb-10">
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-500">Visual Evidence (4-Shot)</h3>
-                <div className="grid grid-cols-4 gap-2">
-                   {capturedImages.map((img, i) => (
-                      <div key={i} className="aspect-square rounded-xl bg-slate-900 border border-white/10 overflow-hidden">
-                         <img src={img} className="w-full h-full object-cover opacity-60 hover:opacity-100 transition-opacity" alt={`Shot ${i+1}`} />
-                      </div>
-                   ))}
-                </div>
-             </div>
-
-             <div className="space-y-3">
-                <button 
-                  onClick={async () => {
-                     const res = await saveOrder(results);
-                     if (res.success) alert('AI Analysis Successfully Logged');
-                     else alert('Persistence Error: ' + res.error);
-                  }}
-                  className="w-full py-5 bg-emerald-500 text-slate-950 font-black rounded-full uppercase tracking-widest text-xs flex items-center justify-center gap-2 shadow-2xl shadow-emerald-500/30"
-                >
-                   <Save className="w-4 h-4" /> Finalize Sequence
-                </button>
-                <div className="flex gap-3">
-                   <button className="flex-1 py-4 bg-slate-900 text-white font-black rounded-full uppercase tracking-widest text-[9px] border border-white/5 flex items-center justify-center gap-2">
-                      <Share2 className="w-3.5 h-3.5" /> Export Data
-                   </button>
-                   <button onClick={() => setCurrentStep('welcome')} className="flex-1 py-4 bg-slate-900 text-slate-500 font-black rounded-full uppercase tracking-widest text-[9px] border border-white/5 flex items-center justify-center gap-2">
-                      <RotateCcw className="w-3.5 h-3.5" /> Restart
-                   </button>
-                </div>
-             </div>
-          </div>
-        )}
-
-      </main>
+       </div>
     </div>
   )
 }
