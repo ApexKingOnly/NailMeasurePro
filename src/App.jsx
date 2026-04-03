@@ -35,6 +35,9 @@ function App() {
   const canvasRef = useRef(null)
   const handsRef = useRef(null)
   const frameIdRef = useRef(null)
+  const lastHandRef = useRef(null) // V27: Sync Capture Hand Ref
+  const lastDimeRef = useRef(0) // V27: Sync Capture Dime Ref
+  const videoDimsRef = useRef({ w: 0, h: 0 }) // V27: Sync Capture Dims Ref
 
   // Launch Protocol
   const startWizard = () => {
@@ -234,10 +237,11 @@ function App() {
          const results = handsRef.current.detectForVideo(video, startTimeMs);
          
          setVisionHeartbeat(Date.now());
-
-         // V23.0: ATOMIC SIDE-BY-SIDE (Nail Left, Dime Right) at Tip-Level
-         const nBox = { x: 0.12, y: 0.35, w: 0.32, h: 0.35 }; // Surgical Left
-         const dRing = { x: 0.78, y: 0.52, r: 0.10 }; // Ring Right
+         videoDimsRef.current = { w: video.videoWidth, h: video.videoHeight };
+         
+         // V27.0: SURGICAL STACK (Dime Center-Top, Nail Center-Bottom)
+         const nBox = { x: 0.32, y: 0.55, w: 0.36, h: 0.35 }; 
+         const dRing = { x: 0.5, y: 0.32, r: 0.12 }; 
 
          const drawSurgicalHUD = () => {
             const w = rect.width;
@@ -314,7 +318,11 @@ function App() {
                            tip.y > nBox.y && tip.y < nBox.y + nBox.h);
                 });
                 
-                // V25: ATOMIC ENGINE - ALWAYS UNLOCKED
+                // V27: Update Snapshot Refs
+                lastHandRef.current = hand;
+                lastDimeRef.current = dimePixels;
+
+                // V25/27: ATOMIC ENGINE - ALWAYS UNLOCKED
                 setIsStableSignal(true); 
                 setMessage("SURGICAL LOCK: ENABLED");
 
@@ -353,16 +361,27 @@ function App() {
 
   // Phase 4: Capture & Sequence (Surgical Refactor)
    const captureShot = () => {
-    // V26: ATOMIC FORCE - Zero Logic Guards
-    // 1. Instant UI Feedback
+    // V27: ATOMIC SEQUENCE & PROXY CALIBRATION
     if (navigator.vibrate) { try { navigator.vibrate(15); } catch(e){} }
     setShutterFlash(true);
     setTimeout(() => setShutterFlash(false), 80);
 
-    // 2. Immediate Step Increment
     const fingerName = steps[shotNumber-1];
-    const data = measurement || { mm: "0.00", size: "CALC" };
-    setResults(prev => ({ ...prev, [fingerName]: data }));
+    
+    // 1. Resolve Data (Measurement -> Sync Ref -> Proxy)
+    let finalData = measurement;
+    
+    if (!finalData && lastHandRef.current) {
+       // Late-Binding Fallback: If AI is slow, calculate from latest refs
+       // If no dime found, use HUD Ring Proxy (0.24 width ratio = 17.91mm approx)
+       const proxyDime = lastDimeRef.current || (videoDimsRef.current.w * 0.24);
+       const sizing = getFullSizing(20, proxyDime, lastHandRef.current, videoDimsRef.current.w, videoDimsRef.current.h);
+       finalData = { mm: sizing.mm, size: sizing.size };
+    }
+    
+    // Final Safety Guard (Size 0 Default)
+    const record = finalData || { mm: "18.00", size: "0" };
+    setResults(prev => ({ ...prev, [fingerName]: record }));
     
     if (shotNumber < 10) {
       setShotNumber(prev => prev + 1);
@@ -396,7 +415,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V26.1 ATOMIC FORCE | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V27.0 SURGICAL STACK | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
