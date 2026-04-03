@@ -392,7 +392,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V19.0 CAPTURE OVERRIDE | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V20.0 MINIMALIST SURGICAL HUD | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
@@ -425,12 +425,6 @@ function App() {
 
        {/* HUD TOP: AI STATUS */}
        <div className="absolute top-12 inset-x-0 flex flex-col items-center gap-3 z-30 pointer-events-none">
-          <div className={`px-6 py-2.5 rounded-full border-2 bg-slate-950/80 backdrop-blur-xl shadow-2xl transition-all duration-300 flex items-center gap-4 ${isStableSignal ? 'border-emerald-500 shadow-emerald-500/20' : 'border-slate-800 shadow-black'}`}>
-             <div className={`w-2.5 h-2.5 rounded-full ${isStableSignal ? 'bg-emerald-500 animate-pulse' : 'bg-slate-600'}`} />
-             <span className={`text-[11px] font-black tracking-widest uppercase ${isStableSignal ? 'text-emerald-400' : 'text-slate-400'}`}>
-                {message}
-             </span>
-          </div>
           
           {isStableSignal && measurement && (
              <div className="bg-emerald-500 text-slate-950 px-5 py-1 rounded-full font-black text-[10px] tracking-tight shadow-xl animate-in fade-in slide-in-from-top-2 border-2 border-emerald-400">
