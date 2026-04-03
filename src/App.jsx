@@ -314,15 +314,14 @@ function App() {
                            tip.y > nBox.y && tip.y < nBox.y + nBox.h);
                 });
                 
-                // V23: MANUAL OVERDRIVE (Activation based solely on Dime calibration)
+                // V25: ATOMIC ENGINE - ALWAYS UNLOCKED
+                setIsStableSignal(true); 
+                setMessage("SURGICAL LOCK: ENABLED");
+
                 if (dimeInZone) {
                    const sizing = getFullSizing(20, dimePixels, hand, rect.width, rect.height);
                    setMeasurement({ mm: sizing.mm, size: sizing.size });
-                   setIsStableSignal(true); // V23 Override: Dime-only activation
-                   setMessage("TARGET LOCKED");
                 } else {
-                   setIsStableSignal(false);
-                   setMessage("ALIGN DIME (RIGHT) & NAIL (LEFT)");
                    setMeasurement(null);
                 }
 
@@ -399,7 +398,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V24.0 SENSITIVE CALIBRATION | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V25.0 ATOMIC PERFORMANCE | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
@@ -482,12 +481,11 @@ function App() {
              </button>
              
              <button 
-                 onClick={captureShot}
-                 disabled={!isStableSignal}
-                 className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all active:scale-90 shadow-2xl relative overflow-hidden ${isStableSignal ? 'animate-iridescent text-slate-950 ring-[12px] ring-emerald-500/20' : 'bg-slate-900 border border-slate-800 text-slate-700 opacity-20'}`}
-              >
-                 <Camera className={`w-9 h-9 ${isStableSignal ? 'scale-110' : ''}`} strokeWidth={3} />
-              </button>
+                  onClick={captureShot}
+                  className="w-24 h-24 flex items-center justify-center rounded-[36px] transition-all active:scale-90 shadow-2xl relative overflow-hidden bg-emerald-500 text-slate-950 ring-[12px] ring-emerald-500/20 active:bg-emerald-400"
+               >
+                  <Camera className="w-9 h-9 scale-110" strokeWidth={3} />
+               </button>
           </div>
        </div>
     </div>
