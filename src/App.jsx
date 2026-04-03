@@ -131,8 +131,9 @@ function App() {
        try {
           if (!librariesLoaded) {
              setLibrariesLoaded(true);
-             logToHUD("Powering AI Infrastructure...");
-             await loadScript('https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.7.0/opencv.js', 'cv-atomic');
+             logToHUD("Powering AI Infrastructure (Same-Origin)...");
+             // Local assets served from /public/ during build
+             await loadScript('/opencv.js', 'cv-atomic');
           }
 
           logToHUD("Native script handshake successful.");

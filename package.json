@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "mkdir -p public && curl -L -H \"User-Agent: Mozilla/5.0\" https://unpkg.com/@techstark/opencv-js@4.7.0-release.1/dist/opencv.js -o public/opencv.js && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
