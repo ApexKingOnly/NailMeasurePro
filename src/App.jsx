@@ -104,7 +104,7 @@ function App() {
     };
   }, [currentStep]);
 
-  // Phase 2: AI Hub Initialization (Hardened + Dynamic Sync)
+  // Phase 2: AI Hub Initialization (Modern Tasks-Vision v5)
   useEffect(() => {
     if (!isCameraReady || currentStep !== 'wizard') return;
 
@@ -115,93 +115,58 @@ function App() {
        script.id = id;
        script.crossOrigin = 'anonymous';
        script.onload = resolve;
-       script.onerror = () => reject(new Error(`Failed to load ${id}`));
+       script.onerror = () => reject(new Error(`CDN Error: Could not reach ${id}`));
        document.head.appendChild(script);
     });
 
     const initAI = async () => {
        try {
-          // Dynamic Injection Layer (v4.1.2 Enterprise Scripting)
           if (!librariesLoaded) {
-             setMessage('Infecting Vision Core...');
+             setMessage('Infecting Vision v5...');
              await Promise.all([
-               loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js', 'mp-hands'),
-               loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js', 'mp-draw'),
+               loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js', 'vision-core'),
                loadScript('https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.7.0-release.1/dist/opencv.js', 'cv-core')
              ]);
              setLibrariesLoaded(true);
           }
 
-          // Atomic OpenCV Readiness (v4.1.2 - Mobile WASM Performance Mode)
-          setMessage('Initializing AI Space...');
-          const cvReady = new Promise((resolve) => {
-             if (window.cv && window.cv.Mat) {
-                resolve();
-             } else {
-                // If the script is loaded but wasm isn't ready, cv.onRuntimeInitialized will fire
-                window.Module = { 
-                   onRuntimeInitialized: () => { 
-                      console.log("Atomic CV Heartbeat Confirmed");
-                      resolve(); 
-                   } 
-                };
-                
-                // Backup Polling (Security redundancy)
-                let poll = 0;
-                const i = setInterval(() => {
-                   if (window.cv && window.cv.Mat) { clearInterval(i); resolve(); }
-                   if (poll > 100) { clearInterval(i); resolve(); } // Timeout catch
-                   poll++;
-                }, 200);
-             }
+          // Atomic Handshake (v5 Resilience)
+          setMessage('Calibrating AI Space...');
+          const readiness = new Promise((resolve, reject) => {
+             const timeout = setTimeout(() => reject(new Error("Vision Handshake Timeout")), 20000);
+             const check = () => {
+                if (window.vision && window.cv && window.cv.Mat) {
+                   clearTimeout(timeout);
+                   resolve();
+                } else {
+                   setTimeout(check, 200);
+                }
+             };
+             check();
           });
 
-          await cvReady;
+          await readiness;
 
-          // Final Hardware Dimensions Settle (1.5s delay to prevent dimension stall)
-          await new Promise(r => setTimeout(r, 1500));
+          // Modern Tasks-Vision Initialization
+          const vision = await window.vision.FilesetResolver.forVisionTasks(
+             "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+          );
 
-          if (!window.Hands || !window.cv || !window.cv.Mat) {
-             setMessage('Vision Signal Timeout (v4.1.2)');
-             setIsVisionCrashed(true);
-             return;
-          }
-
-          // Dynamic Resolution Sync (NATIVE DIMENSIONS)
-          if (canvasRef.current && videoRef.current) {
-             const vw = videoRef.current.videoWidth || 1280;
-             const vh = videoRef.current.videoHeight || 720;
-             canvasRef.current.setAttribute('width', vw.toString());
-             canvasRef.current.setAttribute('height', vh.toString());
-          }
-
-          const hands = new window.Hands({
-             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
+          handsRef.current = await window.vision.HandLandmarker.createFromOptions(vision, {
+             baseOptions: {
+                modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                delegate: "GPU"
+             },
+             runningMode: "VIDEO",
+             numHands: 1
           });
-          hands.setOptions({
-             maxNumHands: 1,
-             modelComplexity: 1,
-             minDetectionConfidence: 0.5,
-             minTrackingConfidence: 0.5
-          });
-          await hands.initialize();
-          handsRef.current = hands;
-
-          // Neural Warmup (Stable Buffer)
-          setMessage('Neural Warmup...');
-          const warmup = document.createElement('canvas');
-          warmup.width = 256; warmup.height = 256;
-          const wCtx = warmup.getContext('2d');
-          wCtx.fillStyle = 'black'; 
-          wCtx.fillRect(0,0,256,256);
-          await hands.send({ image: warmup });
 
           setIsVisionReady(true);
-          setMessage('READY (Perfect Signal)');
+          setMessage('READY (V5 Engine)');
        } catch (err) {
-          console.error("AI Init Fatal:", err);
+          console.error("AI Init V5 Fatal:", err);
           setIsVisionCrashed(true);
-          setMessage('Vision Initialization Failed');
+          setMessage(`Init Error: ${err.message || 'Unknown Protocol Failure'}`);
        }
     };
     initAI();
@@ -211,76 +176,84 @@ function App() {
     };
   }, [isCameraReady, currentStep, librariesLoaded]);
 
-  // Phase 3: Vision assessment Loop (Pilot Guidance Enabled)
+  // Phase 3: High-Performance Vision Heartbeat (Threaded)
   useEffect(() => {
-    if (!isVisionReady || !videoRef.current || currentStep !== 'wizard') return
+    if (!isVisionReady || !videoRef.current || currentStep !== 'wizard') return;
 
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
 
     const processFrame = async () => {
       if (!handsRef.current || !videoRef.current || isVisionCrashed) return;
+
       try {
-         await handsRef.current.send({ image: videoRef.current });
-      } catch (err) { console.warn("Frame Drop:", err); }
-      if (currentStep === 'wizard') frameIdRef.current = requestAnimationFrame(processFrame);
-    }
+         const startTimeMs = performance.now();
+         const results = handsRef.current.detectForVideo(videoRef.current, startTimeMs);
+         
+         setVisionHeartbeat(Date.now());
+         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const onResults = (results) => {
-      setVisionHeartbeat(Date.now())
-      ctx.clearRect(0, 0, canvas.width, canvas.height); // Wash artifacts
+         if (results.landmarks && results.landmarks[0]) {
+           const hand = results.landmarks[0];
+           
+           // OpenCV Dime Logic (Integrated)
+           const src = cv.imread(videoRef.current);
+           const gray = new cv.Mat();
+           cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+           const circles = new cv.Mat();
+           cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, 45, 50, 30, 25, 100);
+           
+           let dimePixels = 0;
+           if (circles.cols > 0) {
+              dimePixels = circles.data32F[2] * 2;
+              ctx.beginPath();
+              ctx.arc(circles.data32F[0], circles.data32F[1], circles.data32F[2], 0, 2 * Math.PI);
+              ctx.strokeStyle = '#10b981'; ctx.lineWidth = 4; ctx.stroke();
+           }
 
-      if (results.multiHandLandmarks && results.multiHandLandmarks[0]) {
-        const hand = results.multiHandLandmarks[0]
-        
-        // 1. OpenCV US Dime Intelligence
-        const src = cv.imread(videoRef.current);
-        const gray = new cv.Mat();
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-        const circles = new cv.Mat();
-        // Dynamic Hough Gradient for sub-pixel precision
-        cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, 45, 50, 30, 25, 100);
-        
-        let dimePixels = 0;
-        if (circles.cols > 0) {
-          dimePixels = circles.data32F[2] * 2;
-          ctx.beginPath();
-          ctx.arc(circles.data32F[0], circles.data32F[1], circles.data32F[2], 0, 2 * Math.PI);
-          ctx.strokeStyle = '#10b981';
-          ctx.lineWidth = 4;
-          ctx.stroke();
-        }
+           // Guided Sizing Engine
+           const sizing = getFullSizing(20, dimePixels, hand, canvas.width, canvas.height);
+           setMeasurement({ mm: sizing.mm, size: sizing.size });
+           setMessage(sizing.guidance);
+           setIsStableSignal(sizing.isStable);
 
-        // 2. High Precision Landmark Mapping (Coherent with Screen Density)
-        const nail_tip = hand[8]; // Default index for guidance
-        const wrist = hand[0];
+           // Draw High-Density Connectors (v5 Manual Fallback)
+           if (true) {
+              // Draw 21 High-Precision Landmarks
+              hand.forEach(lm => {
+                 ctx.beginPath();
+                 ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 4, 0, 2 * Math.PI);
+                 ctx.fillStyle = '#10b981';
+                 ctx.fill();
+              });
+              
+              // Draw Key Bone Structures (Index, Thumb, Wrist)
+              ctx.strokeStyle = '#ffffff50';
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.moveTo(hand[0].x * canvas.width, hand[0].y * canvas.height);
+              ctx.lineTo(hand[5].x * canvas.width, hand[5].y * canvas.height);
+              ctx.lineTo(hand[8].x * canvas.width, hand[8].y * canvas.height);
+              ctx.stroke();
+           }
 
-        // Core Alignment Logic (from sizing.js)
-        const sizing = getFullSizing(20, dimePixels, hand, canvas.width, canvas.height);
-        
-        setMeasurement({ mm: sizing.mm, size: sizing.size });
-        setMessage(sizing.guidance);
-        setIsStableSignal(sizing.isStable);
-
-        // 3. Visual Hand Outline
-        window.drawConnectors(ctx, hand, window.HAND_CONNECTIONS, { color: '#ffffff50', lineWidth: 3 });
-        window.drawLandmarks(ctx, hand, { color: '#10b981', lineWidth: 1, radius: 2 });
-
-        src.delete(); gray.delete(); circles.delete();
-      } else {
-        setIsStableSignal(false);
-        setMessage("Position Hand in Frame...");
-        setMeasurement(null);
+           src.delete(); gray.delete(); circles.delete();
+         } else {
+           setIsStableSignal(false);
+           setMessage("Focus Camera on Hand...");
+           setMeasurement(null);
+         }
+      } catch (err) {
+         console.warn("Vision Task Drop:", err);
       }
-    }
 
-    handsRef.current.onResults(onResults)
-    processFrame()
+      if (currentStep === 'wizard') {
+         frameIdRef.current = requestAnimationFrame(processFrame);
+      }
+    };
 
-    return () => {
-      cancelAnimationFrame(frameIdRef.current);
-      if (handsRef.current) handsRef.current.onResults(() => {});
-    }
+    processFrame();
+    return () => cancelAnimationFrame(frameIdRef.current);
   }, [isVisionReady, currentStep, isVisionCrashed]);
 
   // Phase 4: Capture & Sequence
