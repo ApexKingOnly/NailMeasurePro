@@ -21,9 +21,10 @@ export default defineConfig({
       }
     }
   },
+  assetsInclude: ['**/*.wasm', '**/*.task'],
   server: {
     headers: {
-      'Cross-Origin-Embedder-Policy': 'credentialless',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin'
     }
   }
