@@ -284,7 +284,7 @@ function App() {
                const gray = new cv.Mat();
                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
                const circles = new cv.Mat();
-               cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, 45, 50, 30, 25, 100);
+               cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1.2, 45, 50, 22, 20, 150); 
                
                let dimePixels = 0;
                let dimeInZone = false;
@@ -294,8 +294,9 @@ function App() {
                   const cy = circles.data32F[1] / video.videoHeight;
                   
                   // Check if Dime is in HUD Ring (Sweet Spot Center)
+                  // V24: RELAXED ZONE CHECK (50% Allowance)
                   const dist = Math.sqrt(Math.pow(cx - dRing.x, 2) + Math.pow(cy - dRing.y, 2));
-                  if (dist < dRing.r) {
+                  if (dist < dRing.r * 1.5) {
                      dimeInZone = true;
                      dimePixels = circles.data32F[2] * 2;
                      // DIMENSIONS MAPPING (Visual Feedback)
@@ -398,7 +399,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V23.0 ATOMIC SIDE-BY-SIDE | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V24.0 SENSITIVE CALIBRATION | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
