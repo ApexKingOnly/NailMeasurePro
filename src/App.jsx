@@ -352,24 +352,22 @@ function App() {
   }, [isVisionReady, currentStep, isVisionCrashed, isStableSignal]);
 
   // Phase 4: Capture & Sequence (Surgical Refactor)
-  const captureShot = () => {
-    // V23: Forced Activation - Allow capture as long as 'isStableSignal' (Dime Lock) is true
-    if (!isStableSignal) return
-    
-    // 1. Shutter & Haptic Feedback
-    if (navigator.vibrate) navigator.vibrate(15);
+   const captureShot = () => {
+    // V26: ATOMIC FORCE - Zero Logic Guards
+    // 1. Instant UI Feedback
+    if (navigator.vibrate) { try { navigator.vibrate(15); } catch(e){} }
     setShutterFlash(true);
-    setTimeout(() => setShutterFlash(false), 150);
+    setTimeout(() => setShutterFlash(false), 80);
 
-    // 2. Logic Propagation
-    const fingerName = steps[shotNumber-1]
-    setResults(prev => ({ ...prev, [fingerName]: measurement }))
+    // 2. Immediate Step Increment
+    const fingerName = steps[shotNumber-1];
+    const data = measurement || { mm: "0.00", size: "CALC" };
+    setResults(prev => ({ ...prev, [fingerName]: data }));
     
     if (shotNumber < 10) {
-      setShotNumber(prev => prev + 1)
-      setIsStableSignal(false)
+      setShotNumber(prev => prev + 1);
     } else {
-      setTimeout(() => setCurrentStep('finish'), 300);
+      setTimeout(() => setCurrentStep('finish'), 200);
     }
   }
 
@@ -398,7 +396,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V25.0 ATOMIC PERFORMANCE | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V26.0 ATOMIC SEQUENCE | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
