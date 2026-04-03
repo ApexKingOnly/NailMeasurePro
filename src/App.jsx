@@ -125,15 +125,15 @@ function App() {
              setMessage('Loading Vision Core...');
              await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js', 'mp-hands');
              await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js', 'mp-draw');
-             await loadScript('https://docs.opencv.org/4.7.0/opencv.js', 'cv-core');
+             await loadScript('https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.7.0-release.1/dist/opencv.js', 'cv-core');
              setLibrariesLoaded(true);
           }
 
-          // Polling for Global (v4 Resilience)
+          // Polling for Global (v4.1 Resilience - Wait for CV & Hands)
           setMessage('Verifying AI Readiness...');
           let readyPoll = 0;
-          while (!window.Hands && readyPoll < 15) {
-             await new Promise(r => setTimeout(r, 100));
+          while ((!window.Hands || !window.cv || !window.cv.Mat) && readyPoll < 20) {
+             await new Promise(r => setTimeout(r, 200));
              readyPoll++;
           }
 
