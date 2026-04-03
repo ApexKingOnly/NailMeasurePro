@@ -130,15 +130,17 @@ function App() {
           }
 
           // Polling for Global (v4.1 Resilience - Wait for CV & Hands)
+          // Mobile Optimization: 20s timeout for heavy WASM load
           setMessage('Verifying AI Readiness...');
           let readyPoll = 0;
-          while ((!window.Hands || !window.cv || !window.cv.Mat) && readyPoll < 20) {
+          while ((!window.Hands || !window.cv || !window.cv.Mat) && readyPoll < 100) {
              await new Promise(r => setTimeout(r, 200));
              readyPoll++;
           }
 
-          if (!window.Hands) {
-             setMessage('Vision Engine Failed (C51)');
+          if (!window.Hands || !window.cv || !window.cv.Mat) {
+             setMessage('Vision Engine Timeout (v4.1)');
+             setIsVisionCrashed(true);
              return;
           }
 
