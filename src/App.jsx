@@ -235,9 +235,9 @@ function App() {
          
          setVisionHeartbeat(Date.now());
 
-         // V18: VERTICAL SWAP CORE (Dime Top, Nail Bottom) & Zoom-Out Scaling
-         const dRing = { x: 0.5, y: 0.28, r: 0.13 }; // Top-Center for Dime
-         const nBox = { x: 0.3, y: 0.55, w: 0.4, h: 0.3 }; // Bottom-Center for Nail
+         // V18.1: PRECISION SWAP (Dime Top, Nail Bottom) & Zoom-Out Scaling
+         const dRing = { x: 0.5, y: 0.18, r: 0.11 }; // Center-Top for Dime
+         const nBox = { x: 0.32, y: 0.65, w: 0.36, h: 0.25 }; // Center-Bottom for Nail
 
          const drawSurgicalHUD = () => {
             const w = rect.width;
