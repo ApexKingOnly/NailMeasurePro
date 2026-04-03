@@ -209,41 +209,78 @@ function App() {
   useEffect(() => {
     if (!isVisionReady || !videoRef.current || currentStep !== 'wizard') return;
 
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-
     const processFrame = async () => {
-      if (!handsRef.current || !videoRef.current || isVisionCrashed) return;
+      if (!videoRef.current || !canvasRef.current || !handsRef.current) return;
+      
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d', { alpha: true });
+      if (!ctx) return;
+
+      // V17: HIGH-DPI RETINA SCALING
+      const ratio = window.devicePixelRatio || 2;
+      const rect = video.getBoundingClientRect();
+      if (canvas.width !== rect.width * ratio) {
+         canvas.width = rect.width * ratio;
+         canvas.height = rect.height * ratio;
+         canvas.style.width = `${rect.width}px`;
+         canvas.style.height = `${rect.height}px`;
+      }
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.clearRect(0, 0, rect.width, rect.height);
 
       try {
          const startTimeMs = performance.now();
-         const results = handsRef.current.detectForVideo(videoRef.current, startTimeMs);
+         const results = handsRef.current.detectForVideo(video, startTimeMs);
          
          setVisionHeartbeat(Date.now());
-         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-         // V15: VERTICAL PRECISION HUD (Portrait Optimized)
-         const nBox = { x: 0.25, y: 0.15, w: 0.5, h: 0.35 }; // Top-Center for Nail
-         const dRing = { x: 0.5, y: 0.75, r: 0.15 }; // Bottom-Center for Dime
+         // V17: SURGICAL VIEW-FINDER (Corner Brackets & Centered Crosshairs)
+         const nBox = { x: 0.25, y: 0.15, w: 0.5, h: 0.35 }; 
+         const dRing = { x: 0.5, y: 0.75, r: 0.15 }; 
 
-         ctx.setLineDash([10, 5]);
-         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-         ctx.lineWidth = 5;
-         
-         // 🔳 Drawing Nail Box
-         ctx.strokeRect(nBox.x * canvas.width, nBox.y * canvas.height, nBox.w * canvas.width, nBox.h * canvas.height);
-         
-         // ⭕ Drawing Dime Ring
-         ctx.beginPath();
-         ctx.arc(dRing.x * canvas.width, dRing.y * canvas.height, dRing.r * canvas.width, 0, 2 * Math.PI);
-         ctx.stroke();
+         const drawSurgicalHUD = () => {
+            const w = rect.width;
+            const h = rect.height;
+            const bx = nBox.x * w; const by = nBox.y * h; const bw = nBox.w * w; const bh = nBox.h * h;
+            const cl = 30; // Corner Length
+
+            ctx.save();
+            ctx.setLineDash([]);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.lineWidth = 2.5; // Thin surgical line
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = 'rgba(255, 255, 255, 0.4)';
+
+            // 🔳 Precision Bracket (Nail Target)
+            // Top-Left
+            ctx.beginPath(); ctx.moveTo(bx, by + cl); ctx.lineTo(bx, by); ctx.lineTo(bx + cl, by); ctx.stroke();
+            // Top-Right
+            ctx.beginPath(); ctx.moveTo(bx + bw - cl, by); ctx.lineTo(bx + bw, by); ctx.lineTo(bx + bw, by + cl); ctx.stroke();
+            // Bottom-Left
+            ctx.beginPath(); ctx.moveTo(bx, by + bh - cl); ctx.lineTo(bx, by + bh); ctx.lineTo(bx + cl, by + bh); ctx.stroke();
+            // Bottom-Right
+            ctx.beginPath(); ctx.moveTo(bx + bw - cl, by + bh); ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx + bw, by + bh - cl); ctx.stroke();
+
+            // ⭕ Scaling Target (Dime Crosshair)
+            const dx = dRing.x * w; const dy = dRing.y * h; const dr = dRing.r * w;
+            ctx.setLineDash([8, 12]);
+            ctx.beginPath(); ctx.arc(dx, dy, dr, 0, 2 * Math.PI); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(dx - 10, dy); ctx.lineTo(dx + 10, dy); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(dx, dy - 10); ctx.lineTo(dx, dy + 10); ctx.stroke();
+            ctx.restore();
+         };
+
+         drawSurgicalHUD();
 
          if (results.landmarks && results.landmarks[0]) {
             const hand = results.landmarks[0];
 
             // OpenCV Dime Logic
             try {
-               const src = cv.imread(videoRef.current);
+               const src = cv.imread(video);
                const gray = new cv.Mat();
                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
                const circles = new cv.Mat();
@@ -253,17 +290,18 @@ function App() {
                let dimeInZone = false;
 
                if (circles.cols > 0) {
-                  const cx = circles.data32F[0] / canvas.width;
-                  const cy = circles.data32F[1] / canvas.height;
+                  const cx = circles.data32F[0] / video.videoWidth;
+                  const cy = circles.data32F[1] / video.videoHeight;
                   
                   // Check if Dime is in HUD Ring (Sweet Spot Center)
                   const dist = Math.sqrt(Math.pow(cx - dRing.x, 2) + Math.pow(cy - dRing.y, 2));
                   if (dist < dRing.r) {
                      dimeInZone = true;
                      dimePixels = circles.data32F[2] * 2;
+                     // DIMENSIONS MAPPING (Visual Feedback)
                      ctx.setLineDash([]);
-                     ctx.beginPath(); ctx.arc(circles.data32F[0], circles.data32F[1], circles.data32F[2], 0, 2 * Math.PI);
-                     ctx.strokeStyle = '#10b981'; ctx.lineWidth = 8; ctx.stroke();
+                     ctx.beginPath(); ctx.arc(circles.data32F[0]/ratio, circles.data32F[1]/ratio, circles.data32F[2]/ratio, 0, 2 * Math.PI);
+                     ctx.strokeStyle = '#10b981'; ctx.lineWidth = 4; ctx.stroke();
                   }
                }
 
@@ -272,7 +310,7 @@ function App() {
                                     hand[8].y > nBox.y && hand[8].y < nBox.y + nBox.h);
 
                if (dimeInZone && fingerInZone) {
-                  const sizing = getFullSizing(20, dimePixels, hand, canvas.width, canvas.height);
+                  const sizing = getFullSizing(20, dimePixels, hand, rect.width, rect.height);
                   setMeasurement({ mm: sizing.mm, size: sizing.size });
                   setMessage("LOCKED - READY TO CAPTURE");
                   setIsStableSignal(true);
@@ -289,10 +327,8 @@ function App() {
             }
 
             // V15: LANDMARK PURGE (Professional Clean UI)
-            // Hiding skeleton points to ensure surgical clarity
             hand.forEach(lm => {
-               // Points are visible only if you have 'Stable Signal' and only at 10% opacity
-               ctx.beginPath(); ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 2, 0, 2 * Math.PI);
+               ctx.beginPath(); ctx.arc(lm.x * rect.width, lm.y * rect.height, 2, 0, 2 * Math.PI);
                ctx.fillStyle = isStableSignal ? 'rgba(16, 185, 129, 0.4)' : 'transparent'; ctx.fill();
             });
          } else {
@@ -357,7 +393,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V16.0 SEQUENTIAL SOLO ENGINE | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V17.0 ULTRA-HD SURGICAL HUB | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
