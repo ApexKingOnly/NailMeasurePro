@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Camera, ShieldAlert, Scan, X, RotateCcw, CheckCircle2, ChevronRight, Info } from 'lucide-react'
-import { getFullSizing } from './utils/sizing'
+import { getFullSizing, calculateFingerWidthPixels } from './utils/sizing'
 
-// Finger Landmarks for High Precision 10-Finger Mapping
-const tip_map = { 1: 8, 2: 12, 3: 16, 4: 20 }; // Index, Middle, Ring, Pinky
-const dip_map = { 1: 7, 2: 11, 3: 15, 4: 19 }; // Associated DIP joints
+// V30: Explicit 10-Finger Sequence Mapping
+// L-Pinky(20), L-Ring(16), L-Mid(12), L-Index(8), L-Thumb(4)
+// R-Thumb(4), R-Index(8), R-Mid(12), R-Ring(16), R-Pinky(20)
+const getFingerIndexForShot = (shotNum) => [20, 16, 12, 8, 4, 4, 8, 12, 16, 20][shotNum - 1] || 8;
 
 function App() {
   // Navigation State
@@ -330,6 +331,9 @@ function App() {
 
          if (results.landmarks && results.landmarks[0]) {
             const hand = results.landmarks[0];
+            
+            // V30 Fix: Move landmark assignment out of volatile CV block!
+            lastHandRef.current = hand;
 
             // OpenCV Dime Logic
             try {
@@ -360,7 +364,6 @@ function App() {
                }
 
                 // V27: Update Snapshot Refs
-                lastHandRef.current = hand;
                 lastDimeRef.current = dimePixels;
 
                  // V28: SHUTTER LOCK LOGIC (Leveled + Dime Found)
@@ -368,7 +371,12 @@ function App() {
                  if (isLeveled && dimeDetected) {
                     setIsStableSignal(true);
                     setMessage("TARGET LOCKED (READY)");
-                    const sizing = getFullSizing(20, dimePixels, hand, rect.width, rect.height);
+                    
+                    // V29: Get finger index for current shot
+                    const fingerIndex = getFingerIndexForShot(shotNumber); 
+                    const fingerPx = calculateFingerWidthPixels(hand, fingerIndex, rect.width, rect.height);
+                    
+                    const sizing = getFullSizing(fingerPx, dimePixels, hand, rect.width, rect.height);
                     setMeasurement({ mm: sizing.mm, size: sizing.size });
                  } else if (!isLeveled) {
                     setIsStableSignal(false);
@@ -383,6 +391,11 @@ function App() {
                src.delete(); gray.delete(); circles.delete();
             } catch (cvErr) {
                console.warn("CV Frame Error:", cvErr);
+               
+               // V30: If CV fails, we unready the shutter to prevent 18mm false positives
+               setIsStableSignal(false);
+               setMessage("Analyzing Environment...");
+               setMeasurement(null);
             }
 
             // V15: LANDMARK PURGE (Professional Clean UI)
@@ -419,15 +432,17 @@ function App() {
     let finalData = measurement;
     
     if (!finalData && lastHandRef.current) {
-       // Late-Binding Fallback: If AI is slow, calculate from latest refs
-       // If no dime found, use HUD Ring Proxy (0.24 width ratio = 17.91mm approx)
+       // Late-Binding Fallback: Use Dynamic Landmark Width (Fixes Size 0)
+       const fingerIndex = getFingerIndexForShot(shotNumber);
+       const fingerPx = calculateFingerWidthPixels(lastHandRef.current, fingerIndex, videoDimsRef.current.w, videoDimsRef.current.h);
        const proxyDime = lastDimeRef.current || (videoDimsRef.current.w * 0.24);
-       const sizing = getFullSizing(20, proxyDime, lastHandRef.current, videoDimsRef.current.w, videoDimsRef.current.h);
+       
+       const sizing = getFullSizing(fingerPx, proxyDime, lastHandRef.current, videoDimsRef.current.w, videoDimsRef.current.h);
        finalData = { mm: sizing.mm, size: sizing.size };
     }
     
-    // Final Safety Guard (Size 0 Default)
-    const record = finalData || { mm: "18.00", size: "0" };
+    // Final Safety Guard - Avoids Size 0 silently by marking ERR
+    const record = finalData || { mm: "Err", size: "Err" };
     setResults(prev => ({ ...prev, [fingerName]: record }));
     
     if (shotNumber < 10) {
@@ -439,19 +454,61 @@ function App() {
 
   // UI VIEWS
   if (currentStep === 'finish') return (
-    <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-10 text-center animate-in fade-in zoom-in duration-500">
-       <CheckCircle2 className="w-20 h-20 text-emerald-500 mb-6 drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]" />
-       <h2 className="text-3xl font-black text-white mb-2 tracking-tighter italic uppercase">SIZING COMPLETE 🛡️</h2>
-       <p className="text-slate-400 mb-10 text-sm font-medium tracking-tight">Your V11 surgical measurements have been finalized.</p>
-       <div className="grid grid-cols-2 gap-4 w-full max-w-sm mb-12">
-          {Object.entries(results).map(([finger, data]) => (
-             <div key={finger} className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col items-center shadow-lg">
-                <span className="text-[10px] text-slate-500 font-black uppercase mb-1 tracking-widest">{finger.replace(' Fingers', '')}</span>
-                <span className="text-xl font-black text-white tracking-widest leading-none underline decoration-emerald-500/20 underline-offset-4">SIZE {data.size}</span>
+    <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center overflow-y-auto">
+       <div className="absolute top-0 inset-x-0 h-64 bg-emerald-500/5 blur-3xl opacity-50" />
+       
+       <CheckCircle2 className="w-16 h-16 text-emerald-500 mb-4 drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]" />
+       <h2 className="text-3xl font-black text-white mb-1 tracking-tighter italic uppercase">NAIL PALETTE REPORT 🛡️</h2>
+       <p className="text-slate-500 mb-8 text-[9px] font-black tracking-widest uppercase opacity-60">V30 SURGICAL PRECISION LOG</p>
+       
+       <div className="w-full max-w-sm flex flex-col gap-6 mb-10">
+          {/* LEFT HAND */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-5 backdrop-blur-md">
+             <div className="text-[10px] text-emerald-400 font-black tracking-widest uppercase mb-4 text-left border-b border-emerald-500/10 pb-2 flex items-center gap-2">
+                <ChevronRight className="w-3 h-3" /> LEFT HAND PALETTE
              </div>
-          ))}
+             <div className="grid grid-cols-5 gap-2">
+                {steps.slice(0, 5).map(f => (
+                   <div key={f} className="flex flex-col items-center bg-black/40 p-2 rounded-xl border border-slate-800/80">
+                      <span className="text-[7px] text-slate-500 font-bold mb-1 truncate w-full uppercase">{f.replace('Left ', '')}</span>
+                      <span className="text-sm font-black text-white leading-none tracking-tighter">#{results[f]?.size || '0'}</span>
+                      <span className="text-[7px] text-emerald-500/60 font-black mt-1 leading-none">{results[f]?.mm}mm</span>
+                   </div>
+                ))}
+             </div>
+          </div>
+
+          {/* RIGHT HAND */}
+          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-5 backdrop-blur-md">
+             <div className="text-[10px] text-emerald-400 font-black tracking-widest uppercase mb-4 text-left border-b border-emerald-500/10 pb-2 flex items-center gap-2">
+                <ChevronRight className="w-3 h-3" /> RIGHT HAND PALETTE
+             </div>
+             <div className="grid grid-cols-5 gap-2">
+                {steps.slice(5, 10).map(f => (
+                   <div key={f} className="flex flex-col items-center bg-black/40 p-2 rounded-xl border border-slate-800/80">
+                      <span className="text-[7px] text-slate-500 font-bold mb-1 truncate w-full uppercase">{f.replace('Right ', '')}</span>
+                      <span className="text-sm font-black text-white leading-none tracking-tighter">#{results[f]?.size || '0'}</span>
+                      <span className="text-[7px] text-emerald-500/60 font-black mt-1 leading-none">{results[f]?.mm}mm</span>
+                   </div>
+                ))}
+             </div>
+          </div>
        </div>
-       <button onClick={() => setCurrentStep('welcome')} className="w-full max-w-sm py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl shadow-2xl transition-all active:scale-95 text-lg shadow-emerald-500/20 ring-4 ring-emerald-500/10 uppercase">FINISH SESSION</button>
+
+       <div className="flex flex-col gap-3 w-full max-w-sm">
+          <button 
+             onClick={() => {
+                const text = steps.map(f => `${f}: Size ${results[f]?.size} (${results[f]?.mm}mm)`).join('\n');
+                navigator.clipboard.writeText(`NAILSCALE REPORT:\n${text}`);
+                alert("Nail Report Copied to Clipboard! 🛡️💅🏽");
+             }}
+             className="w-full py-5 bg-slate-900 border border-emerald-500/50 text-emerald-400 font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-xs tracking-widest uppercase mb-1"
+          >
+             <ChevronRight className="w-4 h-4" /> COPY TEXT REPORT
+          </button>
+          
+          <button onClick={() => setCurrentStep('welcome')} className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl shadow-2xl transition-all active:scale-95 text-lg shadow-emerald-500/20 ring-4 ring-emerald-500/10 uppercase">FINISH SESSION</button>
+       </div>
     </div>
   )
 
@@ -462,7 +519,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V28.1 SPIRIT LEVEL | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V30.0 STRICT LOCK | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
@@ -546,9 +603,10 @@ function App() {
              
              <button 
                   onClick={captureShot}
-                  className="w-24 h-24 flex items-center justify-center rounded-[36px] transition-all active:scale-90 shadow-2xl relative overflow-hidden bg-emerald-500 text-slate-950 ring-[12px] ring-emerald-500/20 active:bg-emerald-400"
+                  disabled={!isStableSignal}
+                  className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all shadow-2xl relative overflow-hidden ring-[12px] ${isStableSignal ? 'bg-emerald-500 text-slate-950 ring-emerald-500/20 cursor-pointer active:scale-90 active:bg-emerald-400 hover:bg-emerald-400' : 'bg-slate-800/80 text-slate-600 ring-slate-800/20 cursor-not-allowed opacity-80'}`}
                >
-                  <Camera className="w-9 h-9 scale-110" strokeWidth={3} />
+                  <Camera className={`w-9 h-9 scale-110 ${!isStableSignal && 'opacity-50'}`} strokeWidth={3} />
                </button>
           </div>
        </div>

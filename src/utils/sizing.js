@@ -56,6 +56,26 @@ export const mmToNailSize = (mm) => {
   return bestMatch.size;
 };
 
+/**
+ * V29: Distal Phalanx Scan
+ * Calculates the horizontal width of the fingertip phalanx in pixels.
+ * Uses the tip (e.g. 8) and DIP joint (e.g. 7) to estimate local width.
+ */
+export const calculateFingerWidthPixels = (hand, fingerIndex, canvasWidth, canvasHeight) => {
+  if (!hand || !hand[fingerIndex]) return 20; // Safe Fallback
+
+  const tip = hand[fingerIndex];
+  const dip = hand[fingerIndex - 1]; // DIP joint is the previous landmark in MD sequence for non-thumb
+
+  // Euclidean Distance in Pixels (Verticalish)
+  const dy = (tip.y - dip.y) * canvasHeight;
+  const dx = (tip.x - dip.x) * canvasWidth;
+  const phalanxLength = Math.sqrt(dx * dx + dy * dy);
+
+  // Distal Phalanx Aspect Ratio: Typically width is ~0.85 of length
+  return phalanxLength * 0.85;
+};
+
 export const getFullSizing = (pixelWidth, dimePixels, handLandmarks, canvasWidth, canvasHeight) => {
   const mm = calculateMM(pixelWidth, dimePixels);
   const size = mmToNailSize(mm);
