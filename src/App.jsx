@@ -235,9 +235,9 @@ function App() {
          
          setVisionHeartbeat(Date.now());
 
-         // V17: SURGICAL VIEW-FINDER (Corner Brackets & Centered Crosshairs)
-         const nBox = { x: 0.25, y: 0.15, w: 0.5, h: 0.35 }; 
-         const dRing = { x: 0.5, y: 0.75, r: 0.15 }; 
+         // V18: VERTICAL SWAP CORE (Dime Top, Nail Bottom) & Zoom-Out Scaling
+         const dRing = { x: 0.5, y: 0.28, r: 0.13 }; // Top-Center for Dime
+         const nBox = { x: 0.3, y: 0.55, w: 0.4, h: 0.3 }; // Bottom-Center for Nail
 
          const drawSurgicalHUD = () => {
             const w = rect.width;
@@ -393,7 +393,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V17.0 ULTRA-HD SURGICAL HUB | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V18.0 VERTICAL SWAP CORE | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
