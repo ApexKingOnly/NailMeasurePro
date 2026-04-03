@@ -305,16 +305,15 @@ function App() {
                   }
                }
 
-                // Check if ACTIVE FINGER is in Box (Dynamic Landmark Mapping)
-                const currentStepLabel = steps[shotNumber-1];
-                const landmarkIndices = { "Pinky": 20, "Ring": 16, "Middle": 12, "Pointer": 8, "Thumb": 4 };
-                const tipIdx = Object.entries(landmarkIndices).find(([k]) => currentStepLabel.includes(k))?.[1] || 8;
+                // V22: UNIVERSAL FINGER DETECTION (ANY fingertip in box)
+                const tipIndices = [4, 8, 12, 16, 20];
+                const fingerInZone = tipIndices.some(idx => {
+                   const tip = hand[idx];
+                   return (tip.x > nBox.x && tip.x < nBox.x + nBox.w && 
+                           tip.y > nBox.y && tip.y < nBox.y + nBox.h);
+                });
                 
-                const fingerTip = hand[tipIdx];
-                const fingerInZone = (fingerTip.x > nBox.x && fingerTip.x < nBox.x + nBox.w && 
-                                     fingerTip.y > nBox.y && fingerTip.y < nBox.y + nBox.h);
-
-               if (dimeInZone && fingerInZone) {
+                if (dimeInZone && fingerInZone) {
                   const sizing = getFullSizing(20, dimePixels, hand, rect.width, rect.height);
                   setMeasurement({ mm: sizing.mm, size: sizing.size });
                   setMessage("LOCKED - READY TO CAPTURE");
@@ -397,7 +396,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V21.0 DYNAMIC FINGER TRACKING | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V22.0 UNIVERSAL FINGER ENGINE | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
