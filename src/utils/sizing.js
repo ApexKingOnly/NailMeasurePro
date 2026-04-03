@@ -91,9 +91,9 @@ export const getFullSizing = (pixelWidth, dimePixels, handLandmarks, canvasWidth
   }
 
   return {
-    mm: mm.toFixed(2),
-    size: size,
-    guidance: guidance,
-    isStable: isStable
+    mm: mm?.toFixed?.(2) || "0.00",
+    size: size || "N/A",
+    guidance: guidance || "Initializing...",
+    isStable: isStable || false
   };
 };

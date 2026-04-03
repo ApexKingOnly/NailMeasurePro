@@ -13,10 +13,11 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
     minify: 'esbuild',
+    target: 'esnext',
     rollupOptions: {
       output: {
         manualChunks: {
-          'vendor': ['react', 'react-dom', 'lucide-react', '@supabase/supabase-js']
+          'mediapipe': ['@mediapipe/tasks-vision']
         }
       }
     }
