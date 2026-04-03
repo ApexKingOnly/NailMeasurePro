@@ -121,25 +121,48 @@ function App() {
 
     const initAI = async () => {
        try {
+          // Dynamic Injection Layer (v4.1.2 Enterprise Scripting)
           if (!librariesLoaded) {
-             setMessage('Loading Vision Core...');
-             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js', 'mp-hands');
-             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js', 'mp-draw');
-             await loadScript('https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.7.0-release.1/dist/opencv.js', 'cv-core');
+             setMessage('Infecting Vision Core...');
+             await Promise.all([
+               loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js', 'mp-hands'),
+               loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js', 'mp-draw'),
+               loadScript('https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.7.0-release.1/dist/opencv.js', 'cv-core')
+             ]);
              setLibrariesLoaded(true);
           }
 
-          // Polling for Global (v4.1 Resilience - Wait for CV & Hands)
-          // Mobile Optimization: 20s timeout for heavy WASM load
-          setMessage('Verifying AI Readiness...');
-          let readyPoll = 0;
-          while ((!window.Hands || !window.cv || !window.cv.Mat) && readyPoll < 100) {
-             await new Promise(r => setTimeout(r, 200));
-             readyPoll++;
-          }
+          // Atomic OpenCV Readiness (v4.1.2 - Mobile WASM Performance Mode)
+          setMessage('Initializing AI Space...');
+          const cvReady = new Promise((resolve) => {
+             if (window.cv && window.cv.Mat) {
+                resolve();
+             } else {
+                // If the script is loaded but wasm isn't ready, cv.onRuntimeInitialized will fire
+                window.Module = { 
+                   onRuntimeInitialized: () => { 
+                      console.log("Atomic CV Heartbeat Confirmed");
+                      resolve(); 
+                   } 
+                };
+                
+                // Backup Polling (Security redundancy)
+                let poll = 0;
+                const i = setInterval(() => {
+                   if (window.cv && window.cv.Mat) { clearInterval(i); resolve(); }
+                   if (poll > 100) { clearInterval(i); resolve(); } // Timeout catch
+                   poll++;
+                }, 200);
+             }
+          });
+
+          await cvReady;
+
+          // Final Hardware Dimensions Settle (1.5s delay to prevent dimension stall)
+          await new Promise(r => setTimeout(r, 1500));
 
           if (!window.Hands || !window.cv || !window.cv.Mat) {
-             setMessage('Vision Engine Timeout (v4.1)');
+             setMessage('Vision Signal Timeout (v4.1.2)');
              setIsVisionCrashed(true);
              return;
           }
