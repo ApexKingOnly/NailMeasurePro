@@ -222,20 +222,20 @@ function App() {
          setVisionHeartbeat(Date.now());
          ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+         // V14: PERMANENT HUD OVERLAYS (Always Visible)
+         const dRing = { x: 0.75, y: 0.5, r: 0.12 }; // Middle-Right for Dime
+         const nBox = { x: 0.1, y: 0.3, w: 0.4, h: 0.4 }; // Middle-Left for Solo Nail
+
+         ctx.setLineDash([8, 8]);
+         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+         ctx.lineWidth = 4;
+         ctx.strokeRect(nBox.x * canvas.width, nBox.y * canvas.height, nBox.w * canvas.width, nBox.h * canvas.height);
+         ctx.beginPath();
+         ctx.arc(dRing.x * canvas.width, dRing.y * canvas.height, dRing.r * canvas.width, 0, 2 * Math.PI);
+         ctx.stroke();
+
          if (results.landmarks && results.landmarks[0]) {
             const hand = results.landmarks[0];
-            
-            // HUD Target Zone Logic (Side-by-Side Split)
-            const dRing = { x: 0.75, y: 0.5, r: 0.12 }; // Middle-Right for Dime
-            const nBox = { x: 0.1, y: 0.3, w: 0.4, h: 0.4 }; // Middle-Left for Solo Nail
-            
-            // Draw Target Guides for User
-            ctx.setLineDash([5, 5]);
-            ctx.strokeStyle = '#ffffff40';
-            ctx.strokeRect(nBox.x * canvas.width, nBox.y * canvas.height, nBox.w * canvas.width, nBox.h * canvas.height);
-            ctx.beginPath();
-            ctx.arc(dRing.x * canvas.width, dRing.y * canvas.height, dRing.r * canvas.width, 0, 2 * Math.PI);
-            ctx.stroke();
 
             // OpenCV Dime Logic
             try {
@@ -309,7 +309,8 @@ function App() {
   const captureShot = () => {
     if (!measurement || !isStableSignal) return
     
-    // 1. Shutter Feedback
+    // 1. Shutter & Haptic Feedback
+    if (navigator.vibrate) navigator.vibrate(15);
     setShutterFlash(true);
     setTimeout(() => setShutterFlash(false), 150);
 
@@ -350,7 +351,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V13.0 PROFESSIONAL SOLO | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V14.0 MACRO-SURGICAL HUD | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
@@ -399,7 +400,7 @@ function App() {
 
        {/* VISION LAYER */}
        <div className="relative flex-1 overflow-hidden bg-black flex items-center justify-center">
-          <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover grayscale opacity-90 brightness-110 contrast-110" playsInline muted />
+          <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover opacity-100 brightness-100 contrast-100 shadow-inner" playsInline muted />
           
           {/* Main Feed with High Contrast */}
           <div className="absolute inset-0 w-full h-full bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/80 pointer-events-none z-0" />
@@ -439,12 +440,12 @@ function App() {
              </button>
              
              <button 
-                onClick={captureShot}
-                disabled={!isStableSignal}
-                className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all active:scale-90 shadow-2xl ${isStableSignal ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/20 ring-[12px] ring-emerald-500/10' : 'bg-slate-900 border border-slate-800 text-slate-700 opacity-20'}`}
-             >
-                <Camera className="w-9 h-9" strokeWidth={3} />
-             </button>
+                 onClick={captureShot}
+                 disabled={!isStableSignal}
+                 className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all active:scale-90 shadow-2xl relative overflow-hidden ${isStableSignal ? 'animate-iridescent text-slate-950 ring-[12px] ring-emerald-500/20' : 'bg-slate-900 border border-slate-800 text-slate-700 opacity-20'}`}
+              >
+                 <Camera className={`w-9 h-9 ${isStableSignal ? 'scale-110' : ''}`} strokeWidth={3} />
+              </button>
           </div>
        </div>
     </div>

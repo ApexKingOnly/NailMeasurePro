@@ -19,3 +19,16 @@
   70% { box-shadow: 0 0 0 20px rgba(16, 185, 129, 0); }
   100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
 }
+
+@keyframes iridescent {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-iridescent {
+  background: linear-gradient(280deg, #10b981, #059669, #34d399, #10b981, #6ee7b7);
+  background-size: 200% 200%;
+  animation: iridescent 1s linear infinite;
+  box-shadow: 0 0 40px rgba(16, 185, 129, 0.4);
+}
