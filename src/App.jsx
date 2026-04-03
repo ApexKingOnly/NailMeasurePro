@@ -104,14 +104,14 @@ function App() {
     };
   }, [currentStep]);
 
-  // Stability & Debug Layer (v8 Native Core)
+  // Stability & Debug Layer (v10 Dynamic Core)
   const [debugLog, setDebugLog] = useState([])
   const logToHUD = (txt) => {
-     console.log(`[V8-NATIVE]: ${txt}`);
+     console.log(`[V10-NATIVE]: ${txt}`);
      setDebugLog(prev => [...prev.slice(-15), `> ${new Date().toLocaleTimeString().split(' ')[0]} | ${txt}`]);
   }
 
-  // Phase 2: AI Hub Initialization (V8 Native Architecture)
+  // Phase 2: AI Hub Initialization (V10 Atomic Dynamic Architecture)
   useEffect(() => {
     if (!isCameraReady || currentStep !== 'wizard') return;
 
@@ -132,7 +132,7 @@ function App() {
           if (!librariesLoaded) {
              setLibrariesLoaded(true);
              logToHUD("Powering AI Infrastructure (Same-Origin)...");
-             // Local assets served from /public/ during build
+             // Local assets served from /public/ during build (v9 fix)
              await loadScript('/opencv.js', 'cv-atomic');
           }
 
@@ -153,13 +153,23 @@ function App() {
           await readiness;
           logToHUD("Native Space READY.");
 
+          // V10: DYNAMIC IMPORT (RELIABILITY OVERRIDE)
+          logToHUD("V10: Summoning Vision Core...");
+          const visionLib = await import("@mediapipe/tasks-vision");
+          const { FilesetResolver, HandLandmarker } = visionLib;
+          
+          if (!FilesetResolver || !HandLandmarker) {
+             throw new Error("V10: Vision Modules Undefined");
+          }
+          logToHUD("V10: Vision Core SYNCHRONIZED.");
+
           const vision = await FilesetResolver.forVisionTasks(
              "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
           );
 
-          // Atomic Handlandmarker Initialization (V8-NATIVE)
+          // Atomic Handlandmarker Initialization (V10-DYNAMIC)
           try {
-             logToHUD("Initializing V8 Native Kernel...");
+             logToHUD("Initializing V10 Dynamic Kernel...");
              handsRef.current = await HandLandmarker.createFromOptions(vision, {
                 baseOptions: {
                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
@@ -167,9 +177,9 @@ function App() {
                 },
                 runningMode: "VIDEO", numHands: 1
              });
-             logToHUD("V8 NATIVE KERNEL ONLINE.");
+             logToHUD("V10 DYNAMIC KERNEL ONLINE.");
           } catch (gpuErr) {
-             logToHUD("GPU Locked via V8. Falling back to Core CPU...");
+             logToHUD("GPU Locked via V10. Falling back to Core CPU...");
              handsRef.current = await HandLandmarker.createFromOptions(vision, {
                baseOptions: {
                   modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
@@ -177,13 +187,13 @@ function App() {
                },
                runningMode: "VIDEO", numHands: 1
             });
-            logToHUD("V8 CORE CPU ACTIVE.");
+            logToHUD("V10 CORE CPU ACTIVE.");
           }
 
           setIsVisionReady(true);
-          setMessage('READY (V8-NATIVE CORE)');
+          setMessage('READY (V10-DYNAMIC CORE)');
        } catch (err) {
-          logToHUD(`FATAL V8: ${err.message}`);
+          logToHUD(`FATAL V10: ${err.message}`);
           setIsVisionCrashed(true);
           setMessage(`Init Error: ${err.message}`);
        }
