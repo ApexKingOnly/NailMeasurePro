@@ -8,9 +8,12 @@ const dip_map = { 1: 7, 2: 11, 3: 15, 4: 19 }; // Associated DIP joints
 
 function App() {
   // Navigation State
-  const [currentStep, setCurrentStep] = useState('welcome') // welcome, wizard, finish
-  const [shotNumber, setShotNumber] = useState(1) // 1: L4, 2: R4, 3: LT, 4: RT
-  const steps = ["Left 4 Fingers", "Right 4 Fingers", "Left Thumb", "Right Thumb"]
+  const [currentStep, setCurrentStep] = useState('welcome')
+  const [shotNumber, setShotNumber] = useState(1)
+  const steps = [
+    "Left Little", "Left Ring", "Left Middle", "Left Index", "Left Thumb",
+    "Right Thumb", "Right Index", "Right Middle", "Right Ring", "Right Little"
+  ]
   
   // Vision Health & Stability
   const [systemBooting, setSystemBooting] = useState(true)
@@ -222,9 +225,9 @@ function App() {
          if (results.landmarks && results.landmarks[0]) {
             const hand = results.landmarks[0];
             
-            // HUD Target Zone Logic (Fixed Boxes)
-            const dRing = { x: 0.75, y: 0.7, r: 0.1 }; // Bottom-Right for Dime
-            const nBox = { x: 0.1, y: 0.2, w: 0.5, h: 0.4 }; // Top-Left for Nails
+            // HUD Target Zone Logic (Side-by-Side Split)
+            const dRing = { x: 0.75, y: 0.5, r: 0.12 }; // Middle-Right for Dime
+            const nBox = { x: 0.1, y: 0.3, w: 0.4, h: 0.4 }; // Middle-Left for Solo Nail
             
             // Draw Target Guides for User
             ctx.setLineDash([5, 5]);
@@ -314,7 +317,7 @@ function App() {
     const fingerName = steps[shotNumber-1]
     setResults(prev => ({ ...prev, [fingerName]: measurement }))
     
-    if (shotNumber < 4) {
+    if (shotNumber < 10) {
       setShotNumber(prev => prev + 1)
       setIsStableSignal(false)
     } else {
@@ -347,17 +350,17 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V12.1 INDUSTRIAL HUB | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V13.0 PROFESSIONAL SOLO | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
              <span className="text-xs text-slate-300 font-bold">PRECISION GRID SEQUENCE</span>
           </div>
-          <ul className="space-y-4">
-             {["Left Fingers", "Right Fingers", "Left Thumb", "Right Thumb"].map(s => (
-                <li key={s} className="flex items-center gap-4 text-slate-400 font-black text-[11px] uppercase tracking-widest">
-                   <ChevronRight className="w-4 h-4 text-emerald-500" /> {s}
+          <ul className="grid grid-cols-2 gap-x-8 gap-y-3">
+             {steps.map(s => (
+                <li key={s} className="flex items-center gap-2 text-slate-400 font-black text-[9px] uppercase tracking-widest leading-none">
+                   <ChevronRight className="w-3 h-3 text-emerald-500 shrink-0" /> {s.replace('Left ', 'L ').replace('Right ', 'R ')}
                 </li>
              ))}
           </ul>
@@ -396,7 +399,7 @@ function App() {
 
        {/* VISION LAYER */}
        <div className="relative flex-1 overflow-hidden bg-black flex items-center justify-center">
-          <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover grayscale opacity-40 brightness-50 contrast-125" playsInline muted />
+          <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover grayscale opacity-90 brightness-110 contrast-110" playsInline muted />
           
           {/* Main Feed with High Contrast */}
           <div className="absolute inset-0 w-full h-full bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/80 pointer-events-none z-0" />
@@ -426,7 +429,7 @@ function App() {
        {/* CONTROL SURFACE */}
        <div className="p-10 bg-slate-950 border-t border-slate-900/50 flex items-center justify-between z-40">
           <div className="flex flex-col gap-1.5">
-             <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">PRECISION GAP {shotNumber}/4</span>
+             <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">PRECISION SOLO {shotNumber}/10</span>
              <h3 className="text-2xl font-black text-white tracking-widest leading-none uppercase italic">{steps[shotNumber-1]}</h3>
           </div>
 
