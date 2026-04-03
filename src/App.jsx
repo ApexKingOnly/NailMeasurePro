@@ -40,9 +40,15 @@ function App() {
   const [isCameraReady, setIsCameraReady] = useState(false)
   const [visionHeartbeat, setVisionHeartbeat] = useState(Date.now())
   const [isVisionCrashed, setIsVisionCrashed] = useState(false)
+  const [systemBooting, setSystemBooting] = useState(true)
+  const [librariesLoaded, setLibrariesLoaded] = useState(false)
 
   // Launch Wizard
   const startWizard = () => {
+    if (window.innerWidth <= 10) {
+       alert("Viewport too small/stalled. Please resize or refresh.");
+       return; 
+    }
     setShotNumber(1)
     setVisionMode(steps[0])
     setCurrentStep('wizard')
@@ -52,11 +58,31 @@ function App() {
     setIsVisionCrashed(false)
   }
 
+  // System Boot Sequence (settle layout)
+  useEffect(() => {
+     const timer = setTimeout(() => setSystemBooting(false), 2000);
+     return () => clearTimeout(timer);
+  }, []);
+
   const cancelWizard = () => setCurrentStep('welcome')
 
   // Phase 1: Hardware Initiation (Camera Only)
   useEffect(() => {
-    if (currentStep !== 'wizard') return;
+    if (currentStep !== 'wizard' || window.innerWidth === 0) return;
+
+    let pollCount = 0;
+    const maxPolls = 70; // 7 seconds max
+
+    const checkDimensions = () => {
+       if (videoRef.current?.videoWidth > 0) {
+          setIsCameraReady(true);
+       } else if (pollCount < maxPolls && currentStep === 'wizard') {
+          pollCount++;
+          setTimeout(checkDimensions, 100);
+       } else {
+          setMessage('Camera Hardware Timeout');
+       }
+    };
 
     const startCamera = async () => {
        try {
@@ -68,10 +94,7 @@ function App() {
              videoRef.current.srcObject = stream;
              videoRef.current.onloadedmetadata = () => {
                 videoRef.current.play();
-                // Wait for hardware buffer to stabilize
-                setTimeout(() => {
-                   if (videoRef.current?.videoWidth > 0) setIsCameraReady(true);
-                }, 500);
+                checkDimensions();
              }
           }
        } catch (err) {
@@ -87,18 +110,45 @@ function App() {
     };
   }, [currentStep]);
 
-  // Phase 2: AI Hub Initialization (Only after Hardware is ready)
+  // Phase 2: AI Hub Initialization (Dynamic Loading + Neural Warmup)
   useEffect(() => {
-    if (!isCameraReady || currentStep !== 'wizard') return;
+    if (!isCameraReady || currentStep !== 'wizard' || window.innerWidth === 0) return;
+
+    const loadScript = (url, id) => new Promise((resolve, reject) => {
+       if (document.getElementById(id)) return resolve();
+       const script = document.createElement('script');
+       script.src = url;
+       script.id = id;
+       script.crossOrigin = 'anonymous';
+       script.onload = resolve;
+       script.onerror = () => reject(new Error(`Failed to load ${id}`));
+       document.head.appendChild(script);
+    });
 
     const initAI = async () => {
        try {
+          // Dynamic Injection Layer
+          if (!librariesLoaded) {
+             setMessage('Loading Vision Libraries...');
+             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js', 'mp-hands');
+             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675469240/drawing_utils.js', 'mp-draw');
+             await loadScript('https://docs.opencv.org/4.7.0/opencv.js', 'cv-core');
+             setLibrariesLoaded(true);
+          }
+
           if (!window.Hands) {
-             setMessage('Vision Library Missing');
+             setMessage('Vision Engine Error');
              return;
           }
+
+          // Atomic Canvas Sync
+          if (canvasRef.current) {
+             canvasRef.current.setAttribute('width', '1280');
+             canvasRef.current.setAttribute('height', '720');
+          }
+
           const hands = new window.Hands({
-             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`
           });
           hands.setOptions({
              maxNumHands: 1,
@@ -108,22 +158,41 @@ function App() {
           });
           await hands.initialize();
           handsRef.current = hands;
+
+          // Neural Warmup (Enlarged ROI Prime)
+          setMessage('Neural Warmup...');
+          const warmupCanvas = document.createElement('canvas');
+          warmupCanvas.width = 256;
+          warmupCanvas.height = 256;
+          const wCtx = warmupCanvas.getContext('2d');
+          wCtx.fillStyle = 'black';
+          wCtx.fillRect(0, 0, 256, 256);
+
+          await new Promise((resolve, reject) => {
+             const timeout = setTimeout(() => reject(new Error('Warmup Failure')), 4000);
+             hands.onResults((res) => {
+                clearTimeout(timeout);
+                resolve(res);
+             });
+             hands.send({ image: warmupCanvas }).catch(reject);
+          });
+
           setIsVisionReady(true);
-          setMessage('Calibrating AI Core...');
+          setMessage('READY (Perfect Signal)');
        } catch (err) {
-          console.error("AI Init Error:", err);
+          console.error("AI Dynamic Init Fatal:", err);
           setIsVisionCrashed(true);
+          setMessage('Vision Initialization Failed');
        }
     };
     initAI();
 
     return () => {
        if (handsRef.current) {
-          // Cleanup? window.Hands doesn't have a formal close in CDN version usually
           handsRef.current = null;
        }
     };
-  }, [isCameraReady, currentStep]);
+  }, [isCameraReady, currentStep, librariesLoaded]);
 
   // Phase 3: Vision Heartbeat Monitor
   useEffect(() => {
@@ -295,9 +364,14 @@ function App() {
 
              <button 
                onClick={startWizard}
-               className="w-full py-6 bg-emerald-500 text-slate-950 font-black rounded-full uppercase tracking-widest text-xs shadow-2xl shadow-emerald-500/40"
+               disabled={systemBooting}
+               className={`w-full py-6 font-black rounded-full uppercase tracking-widest text-xs transition-all duration-500 shadow-2xl ${
+                 systemBooting 
+                   ? 'bg-slate-900 text-slate-700 border border-white/5 cursor-not-allowed opacity-50' 
+                   : 'bg-emerald-500 text-slate-950 shadow-emerald-500/40 hover:scale-[1.02] active:scale-[0.98]'
+               }`}
              >
-               Initialize Sequence
+               {systemBooting ? 'System Booting...' : 'Initialize Sequence'}
              </button>
           </div>
         )}
