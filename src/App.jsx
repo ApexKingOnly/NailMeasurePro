@@ -104,20 +104,20 @@ function App() {
     };
   }, [currentStep]);
 
-  // Stability & Debug Layer (v6)
+  // Stability & Debug Layer (v8 Native Core)
   const [debugLog, setDebugLog] = useState([])
   const logToHUD = (txt) => {
-     console.log(`[V6-LOG]: ${txt}`);
+     console.log(`[V8-NATIVE]: ${txt}`);
      setDebugLog(prev => [...prev.slice(-15), `> ${new Date().toLocaleTimeString().split(' ')[0]} | ${txt}`]);
   }
 
-  // Phase 2: AI Hub Initialization (Modern Tasks-Vision v5.1 Resilience)
+  // Phase 2: AI Hub Initialization (V8 Native Architecture)
   useEffect(() => {
     if (!isCameraReady || currentStep !== 'wizard') return;
 
     const loadScript = (url, id) => new Promise((resolve, reject) => {
        if (document.getElementById(id)) return resolve();
-       logToHUD(`Injecting ${id}...`);
+       logToHUD(`Syncing ${id}...`);
        const script = document.createElement('script');
        script.src = url;
        script.id = id;
@@ -131,18 +131,15 @@ function App() {
        try {
           if (!librariesLoaded) {
              setLibrariesLoaded(true);
-             logToHUD("Initiating 4G-Optimized Injection...");
-             await Promise.all([
-               loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js', 'vision-v5'),
-               loadScript('https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.7.0/opencv.js', 'cv-stable')
-             ]);
+             logToHUD("Powering AI Infrastructure...");
+             await loadScript('https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.7.0/opencv.js', 'cv-atomic');
           }
 
-          logToHUD("Script injection successful.");
+          logToHUD("Native script handshake successful.");
           const readiness = new Promise((resolve, reject) => {
-             const timeout = setTimeout(() => reject(new Error("Network Handshake Timeout (30s)")), 30000);
+             const timeout = setTimeout(() => reject(new Error("Vision Core Hub Timeout")), 15000);
              const check = () => {
-                if (window.vision && window.cv && window.cv.Mat) {
+                if (window.cv && window.cv.Mat) {
                    clearTimeout(timeout);
                    resolve();
                 } else {
@@ -153,39 +150,39 @@ function App() {
           });
 
           await readiness;
-          logToHUD("Atomic AI Space ready.");
+          logToHUD("Native Space READY.");
 
-          const vision = await window.vision.FilesetResolver.forVisionTasks(
+          const vision = await FilesetResolver.forVisionTasks(
              "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
           );
 
-          // V7-OPTIMIZED BOOT SEQUENCE
+          // Atomic Handlandmarker Initialization (V8-NATIVE)
           try {
-             logToHUD("Booting High-Speed GPU Kernel...");
-             handsRef.current = await window.vision.HandLandmarker.createFromOptions(vision, {
+             logToHUD("Initializing V8 Native Kernel...");
+             handsRef.current = await HandLandmarker.createFromOptions(vision, {
                 baseOptions: {
                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
                    delegate: "GPU"
                 },
                 runningMode: "VIDEO", numHands: 1
              });
-             logToHUD("GPU Kernel V7 ONLINE.");
+             logToHUD("V8 NATIVE KERNEL ONLINE.");
           } catch (gpuErr) {
-             logToHUD("GPU Locked. Fallback to High-Performance CPU...");
-             handsRef.current = await window.vision.HandLandmarker.createFromOptions(vision, {
+             logToHUD("GPU Locked via V8. Falling back to Core CPU...");
+             handsRef.current = await HandLandmarker.createFromOptions(vision, {
                baseOptions: {
                   modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
                   delegate: "CPU"
                },
                runningMode: "VIDEO", numHands: 1
             });
-            logToHUD("CPU Kernel V7 ONLINE.");
+            logToHUD("V8 CORE CPU ACTIVE.");
           }
 
           setIsVisionReady(true);
-          setMessage('READY (V7-OPTIMIZED)');
+          setMessage('READY (V8-NATIVE CORE)');
        } catch (err) {
-          logToHUD(`FATAL: ${err.message}`);
+          logToHUD(`FATAL V8: ${err.message}`);
           setIsVisionCrashed(true);
           setMessage(`Init Error: ${err.message}`);
        }
