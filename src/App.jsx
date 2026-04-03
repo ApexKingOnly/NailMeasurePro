@@ -313,12 +313,11 @@ function App() {
                   const sizing = getFullSizing(20, dimePixels, hand, rect.width, rect.height);
                   setMeasurement({ mm: sizing.mm, size: sizing.size });
                   setMessage("LOCKED - READY TO CAPTURE");
-                  setIsStableSignal(true);
+                  setIsStableSignal(true); // V19: Override to Allow Instant Capture
                } else {
                   setIsStableSignal(false);
-                  if (!dimeInZone) setMessage("Place Dime in Ring ⭕");
-                  else if (!fingerInZone) setMessage("Place Nails in Box 🔳");
                   setMeasurement(null);
+                  setMessage("ALIGN DIME (TOP) & NAIL (BOTTOM)");
                }
 
                src.delete(); gray.delete(); circles.delete();
@@ -393,7 +392,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V18.0 VERTICAL SWAP CORE | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V19.0 CAPTURE OVERRIDE | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
