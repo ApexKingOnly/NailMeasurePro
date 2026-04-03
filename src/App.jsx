@@ -104,79 +104,98 @@ function App() {
     };
   }, [currentStep]);
 
-  // Phase 2: AI Hub Initialization (Modern Tasks-Vision v5)
+  // Stability & Debug Layer (v6)
+  const [debugLog, setDebugLog] = useState([])
+  const logToHUD = (txt) => {
+     console.log(`[V6-LOG]: ${txt}`);
+     setDebugLog(prev => [...prev.slice(-15), `> ${new Date().toLocaleTimeString().split(' ')[0]} | ${txt}`]);
+  }
+
+  // Phase 2: AI Hub Initialization (Modern Tasks-Vision v5.1 Resilience)
   useEffect(() => {
     if (!isCameraReady || currentStep !== 'wizard') return;
 
     const loadScript = (url, id) => new Promise((resolve, reject) => {
        if (document.getElementById(id)) return resolve();
+       logToHUD(`Injecting ${id}...`);
        const script = document.createElement('script');
        script.src = url;
        script.id = id;
        script.crossOrigin = 'anonymous';
        script.onload = resolve;
-       script.onerror = () => reject(new Error(`CDN Error: Could not reach ${id}`));
+       script.onerror = () => reject(new Error(`Failed ${id}`));
        document.head.appendChild(script);
     });
 
     const initAI = async () => {
        try {
           if (!librariesLoaded) {
-             setMessage('Infecting Vision v5...');
+             setLibrariesLoaded(true);
              await Promise.all([
                loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js', 'vision-core'),
                loadScript('https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.7.0-release.1/dist/opencv.js', 'cv-core')
              ]);
-             setLibrariesLoaded(true);
           }
 
-          // Atomic Handshake (v5 Resilience)
-          setMessage('Calibrating AI Space...');
+          logToHUD("Script handshake successful.");
           const readiness = new Promise((resolve, reject) => {
-             const timeout = setTimeout(() => reject(new Error("Vision Handshake Timeout")), 20000);
+             const timeout = setTimeout(() => reject(new Error("Handshake Timeout")), 15000);
              const check = () => {
                 if (window.vision && window.cv && window.cv.Mat) {
                    clearTimeout(timeout);
                    resolve();
                 } else {
-                   setTimeout(check, 200);
+                   setTimeout(check, 250);
                 }
              };
              check();
           });
 
           await readiness;
+          logToHUD("AI Namespace ready.");
 
-          // Modern Tasks-Vision Initialization
           const vision = await window.vision.FilesetResolver.forVisionTasks(
              "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
           );
 
-          handsRef.current = await window.vision.HandLandmarker.createFromOptions(vision, {
-             baseOptions: {
-                modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                delegate: "GPU"
-             },
-             runningMode: "VIDEO",
-             numHands: 1
-          });
+          // RESILIENCE LOOP: GPU -> CPU
+          try {
+             logToHUD("Attempting GPU Delegation...");
+             handsRef.current = await window.vision.HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                   modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                   delegate: "GPU"
+                },
+                runningMode: "VIDEO", numHands: 1
+             });
+             logToHUD("GPU Initialization SUCCESS.");
+          } catch (gpuErr) {
+             logToHUD(`GPU Failed: ${gpuErr.message.slice(0, 30)}...`);
+             logToHUD("Falling back to CPU Mode...");
+             handsRef.current = await window.vision.HandLandmarker.createFromOptions(vision, {
+               baseOptions: {
+                  modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                  delegate: "CPU"
+               },
+               runningMode: "VIDEO", numHands: 1
+            });
+            logToHUD("CPU Initialization SUCCESS.");
+          }
 
           setIsVisionReady(true);
-          setMessage('READY (V5 Engine)');
+          setMessage('READY (PHOENIX ENGINE)');
        } catch (err) {
-          console.error("AI Init V5 Fatal:", err);
+          logToHUD(`FATAL: ${err.message}`);
           setIsVisionCrashed(true);
-          setMessage(`Init Error: ${err.message || 'Unknown Protocol Failure'}`);
+          setMessage(`Init Error: ${err.message}`);
        }
     };
     initAI();
 
-    return () => {
-       if (handsRef.current) handsRef.current = null;
-    };
+    return () => { if (handsRef.current) handsRef.current = null; };
   }, [isCameraReady, currentStep, librariesLoaded]);
 
-  // Phase 3: High-Performance Vision Heartbeat (Threaded)
+  // Phase 3: High-Performance Vision Heartbeat
   useEffect(() => {
     if (!isVisionReady || !videoRef.current || currentStep !== 'wizard') return;
 
@@ -196,56 +215,48 @@ function App() {
          if (results.landmarks && results.landmarks[0]) {
            const hand = results.landmarks[0];
            
-           // OpenCV Dime Logic (Integrated)
-           const src = cv.imread(videoRef.current);
-           const gray = new cv.Mat();
-           cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-           const circles = new cv.Mat();
-           cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, 45, 50, 30, 25, 100);
-           
-           let dimePixels = 0;
-           if (circles.cols > 0) {
-              dimePixels = circles.data32F[2] * 2;
-              ctx.beginPath();
-              ctx.arc(circles.data32F[0], circles.data32F[1], circles.data32F[2], 0, 2 * Math.PI);
-              ctx.strokeStyle = '#10b981'; ctx.lineWidth = 4; ctx.stroke();
-           }
-
-           // Guided Sizing Engine
-           const sizing = getFullSizing(20, dimePixels, hand, canvas.width, canvas.height);
-           setMeasurement({ mm: sizing.mm, size: sizing.size });
-           setMessage(sizing.guidance);
-           setIsStableSignal(sizing.isStable);
-
-           // Draw High-Density Connectors (v5 Manual Fallback)
-           if (true) {
-              // Draw 21 High-Precision Landmarks
-              hand.forEach(lm => {
-                 ctx.beginPath();
-                 ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 4, 0, 2 * Math.PI);
-                 ctx.fillStyle = '#10b981';
-                 ctx.fill();
-              });
+           // OpenCV Dime Logic
+           try {
+              const src = cv.imread(videoRef.current);
+              const gray = new cv.Mat();
+              cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+              const circles = new cv.Mat();
+              cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1, 45, 50, 30, 25, 100);
               
-              // Draw Key Bone Structures (Index, Thumb, Wrist)
-              ctx.strokeStyle = '#ffffff50';
-              ctx.lineWidth = 2;
-              ctx.beginPath();
-              ctx.moveTo(hand[0].x * canvas.width, hand[0].y * canvas.height);
-              ctx.lineTo(hand[5].x * canvas.width, hand[5].y * canvas.height);
-              ctx.lineTo(hand[8].x * canvas.width, hand[8].y * canvas.height);
-              ctx.stroke();
+              let dimePixels = 0;
+              if (circles.cols > 0) {
+                 dimePixels = circles.data32F[2] * 2;
+                 ctx.beginPath(); ctx.arc(circles.data32F[0], circles.data32F[1], circles.data32F[2], 0, 2 * Math.PI);
+                 ctx.strokeStyle = '#10b981'; ctx.lineWidth = 4; ctx.stroke();
+              }
+
+              const sizing = getFullSizing(20, dimePixels, hand, canvas.width, canvas.height);
+              setMeasurement({ mm: sizing.mm, size: sizing.size });
+              setMessage(sizing.guidance);
+              setIsStableSignal(sizing.isStable);
+
+              src.delete(); gray.delete(); circles.delete();
+           } catch (cvErr) {
+              console.warn("CV Frame Error:", cvErr);
            }
 
-           src.delete(); gray.delete(); circles.delete();
+           // Draw Skeleton (Native Fallback)
+           hand.forEach(lm => {
+              ctx.beginPath(); ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 3, 0, 2 * Math.PI);
+              ctx.fillStyle = '#10b981'; ctx.fill();
+           });
+           ctx.strokeStyle = '#ffffff40'; ctx.lineWidth = 1; ctx.beginPath();
+           ctx.moveTo(hand[0].x * canvas.width, hand[0].y * canvas.height);
+           ctx.lineTo(hand[5].x * canvas.width, hand[5].y * canvas.height);
+           ctx.lineTo(hand[8].x * canvas.width, hand[8].y * canvas.height);
+           ctx.stroke();
+
          } else {
            setIsStableSignal(false);
            setMessage("Focus Camera on Hand...");
            setMeasurement(null);
          }
-      } catch (err) {
-         console.warn("Vision Task Drop:", err);
-      }
+      } catch (err) { /* Frame drop silent */ }
 
       if (currentStep === 'wizard') {
          frameIdRef.current = requestAnimationFrame(processFrame);
@@ -295,7 +306,7 @@ function App() {
           <Camera className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[10px] uppercase mb-16 opacity-70">V4.1 AUDITED | FINAL PROTOCOL</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[10px] uppercase mb-16 opacity-70">V6.0 ENTERPRISE | STABILITY REFACTOR</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
@@ -351,13 +362,21 @@ function App() {
              </div>
           )}
 
-          {/* CRITICAL RECOVERY OVERLAY */}
+          {/* CRITICAL RECOVERY OVERLAY WITH DEBUG CONSOLE (v6) */}
           {isVisionCrashed && (
-             <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-2xl flex flex-col items-center justify-center p-12 text-center z-50">
-                <ShieldAlert className="w-16 h-16 text-rose-500 mb-6 animate-bounce" />
-                <h2 className="text-2xl font-black text-white mb-2 leading-none tracking-tighter">RECOVERY HUD ACTIVE</h2>
-                <p className="text-slate-500 text-sm max-w-[280px] mb-12 font-medium leading-relaxed">Vision kernel encountered a dimension stall. Reset the hardware to fix. </p>
-                <button onClick={() => window.location.reload()} className="w-full max-w-[240px] py-5 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl shadow-2xl transition-all active:scale-95">RESTART AI</button>
+             <div className="absolute inset-0 bg-slate-950/98 backdrop-blur-2xl flex flex-col items-center justify-center p-6 text-center z-50 overflow-hidden">
+                <ShieldAlert className="w-12 h-12 text-rose-500 mb-4 animate-bounce" />
+                <h2 className="text-xl font-black text-white mb-2 tracking-tighter uppercase leading-none">RECOVERY HUD ACTIVE</h2>
+                <p className="text-slate-500 text-xs max-w-[280px] mb-6 font-medium leading-relaxed">Vision stall detected. See debug terminal below.</p>
+                
+                {/* Debug Terminal Window */}
+                <div className="w-full max-w-sm bg-black border border-slate-800 rounded-xl p-4 mb-8 text-left h-48 overflow-y-auto font-mono text-[10px] shadow-inner">
+                   {debugLog.length > 0 ? debugLog.map((log, i) => (
+                      <div key={i} className="text-emerald-500/80 mb-1 leading-tight">{log}</div>
+                   )) : <div className="text-slate-600 italic">No logs available...</div>}
+                </div>
+
+                <button onClick={() => window.location.reload()} className="w-full max-w-[240px] py-4 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl shadow-2xl transition-all active:scale-95 uppercase text-xs tracking-widest">RESTART AI</button>
              </div>
           )}
        </div>
