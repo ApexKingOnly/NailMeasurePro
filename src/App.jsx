@@ -35,42 +35,50 @@ function App() {
     "Right Thumb"
   ]
 
+  const [manualOverride, setManualOverride] = useState(false)
+  const [initStartTime, setInitStartTime] = useState(0)
+  const [isCameraReady, setIsCameraReady] = useState(false)
+  const [visionHeartbeat, setVisionHeartbeat] = useState(Date.now())
+  const [isVisionCrashed, setIsVisionCrashed] = useState(false)
+
   // Launch Wizard
   const startWizard = () => {
     setShotNumber(1)
     setVisionMode(steps[0])
     setCurrentStep('wizard')
+    setManualOverride(false)
+    setInitStartTime(Date.now())
+    setIsCameraReady(false)
+    setIsVisionCrashed(false)
   }
 
   const cancelWizard = () => setCurrentStep('welcome')
 
-  // Init Engine
+  // Phase 1: Hardware Initiation (Camera Only)
   useEffect(() => {
     if (currentStep !== 'wizard') return;
 
-    const initAI = async () => {
+    const startCamera = async () => {
        try {
-          handsRef.current = new window.Hands({
-             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-          });
-          handsRef.current.setOptions({
-             maxNumHands: 2,
-             modelComplexity: 1,
-             minDetectionConfidence: 0.7,
-             minTrackingConfidence: 0.7
-          });
-          await handsRef.current.initialize();
-          setIsVisionReady(true);
-          
+          setMessage('Activating Hardware...');
           const stream = await navigator.mediaDevices.getUserMedia({
              video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
           });
-          if (videoRef.current) videoRef.current.srcObject = stream;
+          if (videoRef.current) {
+             videoRef.current.srcObject = stream;
+             videoRef.current.onloadedmetadata = () => {
+                videoRef.current.play();
+                // Wait for hardware buffer to stabilize
+                setTimeout(() => {
+                   if (videoRef.current?.videoWidth > 0) setIsCameraReady(true);
+                }, 500);
+             }
+          }
        } catch (err) {
-          setMessage('Camera Access Error');
+          setMessage('Camera Permission Required');
        }
     };
-    initAI();
+    startCamera();
 
     return () => {
        if (videoRef.current?.srcObject) {
@@ -79,57 +87,128 @@ function App() {
     };
   }, [currentStep]);
 
-  // Assessment Loop (Manual Only)
+  // Phase 2: AI Hub Initialization (Only after Hardware is ready)
+  useEffect(() => {
+    if (!isCameraReady || currentStep !== 'wizard') return;
+
+    const initAI = async () => {
+       try {
+          if (!window.Hands) {
+             setMessage('Vision Library Missing');
+             return;
+          }
+          const hands = new window.Hands({
+             locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+          });
+          hands.setOptions({
+             maxNumHands: 1,
+             modelComplexity: 1,
+             minDetectionConfidence: 0.5,
+             minTrackingConfidence: 0.5
+          });
+          await hands.initialize();
+          handsRef.current = hands;
+          setIsVisionReady(true);
+          setMessage('Calibrating AI Core...');
+       } catch (err) {
+          console.error("AI Init Error:", err);
+          setIsVisionCrashed(true);
+       }
+    };
+    initAI();
+
+    return () => {
+       if (handsRef.current) {
+          // Cleanup? window.Hands doesn't have a formal close in CDN version usually
+          handsRef.current = null;
+       }
+    };
+  }, [isCameraReady, currentStep]);
+
+  // Phase 3: Vision Heartbeat Monitor
+  useEffect(() => {
+     if (currentStep !== 'wizard' || !isVisionReady) return;
+     const timer = setInterval(() => {
+        if (Date.now() - visionHeartbeat > 3000) setIsVisionCrashed(true);
+     }, 1000);
+     return () => clearInterval(timer);
+  }, [currentStep, isVisionReady, visionHeartbeat]);
+
+  // Assessment Loop
   const processFrame = useCallback(async () => {
-     if (status === 'capturing' || !videoRef.current || !canvasRef.current || !isVisionReady) return;
+      if (status === 'capturing' || !videoRef.current || !canvasRef.current || !isVisionReady || isVisionCrashed) return;
 
-     const video = videoRef.current;
-     const canvas = canvasRef.current;
-     const ctx = canvas.getContext('2d');
-     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-     
-     // US Dime & Skeletal Assessment
-     let dime = null;
-     if (window.cv) {
-        try {
-           const mat = window.cv.imread(canvas);
-           const gray = new window.cv.Mat();
-           window.cv.cvtColor(mat, gray, window.cv.COLOR_RGBA2GRAY);
-           const circles = new window.cv.Mat();
-           window.cv.HoughCircles(gray, circles, window.cv.HOUGH_GRADIENT, 1, 100, 100, 30, 40, 150);
-           if (circles.cols > 0) dime = { x: circles.data32F[0], y: circles.data32F[1], r: circles.data32F[2] };
-           mat.delete(); gray.delete(); circles.delete();
-        } catch (e) { }
-     }
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      
+      // GUARD: Dimension lock
+      if (video.videoWidth === 0) {
+         requestAnimationFrame(processFrame);
+         return;
+      }
 
-     const results = await new Promise(resolve => {
-        handsRef.current.onResults(resolve);
-        handsRef.current.send({ image: video });
-     });
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      let dime = null;
+      let handLandmarks = null;
 
-     if (results && results.multiHandLandmarks) {
-        results.multiHandLandmarks.forEach(h => window.drawConnectors(ctx, h, window.HAND_CONNECTIONS, { color: '#ffffff20', lineWidth: 1 }));
-     }
+      // 1. OpenCV US Dime Detection (Robust Params)
+      if (window.cv && window.cv.Mat) {
+         try {
+            const mat = window.cv.imread(canvas);
+            const gray = new window.cv.Mat();
+            window.cv.cvtColor(mat, gray, window.cv.COLOR_RGBA2GRAY);
+            const circles = new window.cv.Mat();
+            // Params: 1, 40, 50, 20, 25, 200
+            window.cv.HoughCircles(gray, circles, window.cv.HOUGH_GRADIENT, 1, 40, 50, 20, 25, 200);
+            if (circles.cols > 0) {
+               dime = { x: circles.data32F[0], y: circles.data32F[1], r: circles.data32F[2] };
+               ctx.beginPath();
+               ctx.arc(dime.x, dime.y, dime.r, 0, 2 * Math.PI);
+               ctx.strokeStyle = '#10b981';
+               ctx.lineWidth = 4;
+               ctx.stroke();
+            }
+            mat.delete(); gray.delete(); circles.delete();
+         } catch (e) { }
+      }
 
-     const isReady = dime && results?.multiHandLandmarks?.length > 0;
-     if (isReady) {
-        setStability(prev => Math.min(100, prev + 5));
-        if (stability > 90) {
-           setStatus('green');
-           setMessage('READY! TAP AI SHUTTER');
-        } else {
-           setMessage('Stabilizing Alignment...');
-        }
-     } else {
-        setStability(0);
-        setStatus('scanning');
-        setMessage(dime ? 'Hand Alignment Required' : 'US Dime Required');
-     }
+      // 2. MediaPipe Hand (Canvas Snapshot Pipeline)
+      try {
+         // Create a tiny snapshot for MediaPipe to confirm ROI safety
+         const results = await new Promise((resolve) => {
+            handsRef.current.onResults(resolve);
+            handsRef.current.send({ image: canvas }); // Send canvas, NOT video!
+         });
 
-     lastStateRef.current = { dime, hands: results?.multiHandLandmarks?.[0] };
+         if (results?.multiHandLandmarks?.length > 0) {
+            handLandmarks = results.multiHandLandmarks[0];
+            window.drawConnectors(ctx, handLandmarks, window.HAND_CONNECTIONS, { color: '#ffffff40', lineWidth: 2 });
+            setVisionHeartbeat(Date.now()); // Alive!
+         }
+      } catch (e) { console.error("AI Runtime Fatal:", e); }
 
-     requestAnimationFrame(processFrame);
-  }, [status, isVisionReady, stability]);
+      // Update UI
+      if (dime && handLandmarks) {
+         setStability(prev => Math.min(100, prev + 15));
+         if (stability > 70) {
+            setStatus('green');
+            setMessage('READY! TAP TO CAPTURE');
+         } else {
+            setMessage('Stabilizing Scale...');
+         }
+      } else {
+         setStability(0);
+         setStatus('scanning');
+         setMessage(dime ? 'Position Hand within Box' : 'US Dime Required for Scale');
+         
+         if (Date.now() - initStartTime > 8000) setManualOverride(true);
+      }
+
+      lastStateRef.current = { dime, hands: handLandmarks };
+      requestAnimationFrame(processFrame);
+  }, [status, isVisionReady, isVisionCrashed, stability, initStartTime, visionHeartbeat]);
 
   useEffect(() => {
      if (currentStep === 'wizard' && (status === 'scanning' || status === 'green')) {
@@ -228,20 +307,42 @@ function App() {
              <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" autoPlay playsInline muted />
              <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" width={1280} height={720} />
 
-             <div className="absolute top-20 inset-x-6 z-50 flex items-center justify-between">
-                <div className="bg-slate-950/80 backdrop-blur-3xl px-6 py-4 rounded-3xl border border-emerald-500/10 flex items-center gap-4">
-                   <div className={`p-2 rounded-2xl ${status === 'green' ? 'bg-emerald-500' : 'bg-slate-800'}`}>
-                      <Box className={`w-5 h-5 ${status === 'green' ? 'text-slate-950' : 'text-slate-500'}`} />
-                   </div>
-                   <div>
-                      <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest leading-none mb-1">Sequence {shotNumber} of 4</p>
-                      <h4 className={`text-sm font-black italic uppercase tracking-tighter ${status === 'green' ? 'text-emerald-400' : 'text-white'}`}>{message}</h4>
-                   </div>
-                </div>
-                <button onClick={cancelWizard} className="bg-slate-950/80 p-4 rounded-full border border-white/5">
-                   <X className="w-6 h-6 text-slate-400" />
-                </button>
-             </div>
+              <div className="absolute top-20 inset-x-6 z-50 flex flex-col gap-4">
+                 <div className="bg-slate-950/80 backdrop-blur-3xl px-6 py-4 rounded-3xl border border-emerald-500/10 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                       <div className={`p-2 rounded-2xl ${status === 'green' ? 'bg-emerald-500' : 'bg-slate-800'}`}>
+                          <Box className={`w-5 h-5 ${status === 'green' ? 'text-slate-950' : 'text-slate-500'}`} />
+                       </div>
+                       <div>
+                          <p className="text-[9px] text-slate-500 font-black uppercase tracking-widest leading-none mb-1">Sequence {shotNumber} of 4</p>
+                          <h4 className={`text-sm font-black italic uppercase tracking-tighter ${status === 'green' ? 'text-emerald-400' : 'text-white'}`}>{message}</h4>
+                       </div>
+                    </div>
+                    <button onClick={cancelWizard} className="p-2">
+                       <X className="w-6 h-6 text-slate-600" />
+                    </button>
+                 </div>
+
+                 {isVisionCrashed && (
+                    <div className="bg-red-500/20 backdrop-blur-2xl px-6 py-4 rounded-[2rem] border border-red-500/20 flex items-center justify-between animate-in slide-in-from-top-4 duration-500">
+                       <div>
+                          <p className="text-[9px] font-black text-red-500 uppercase tracking-widest mb-1">Vision Engine Halted</p>
+                          <p className="text-[10px] text-white/60 font-medium">Hardware stability reset required</p>
+                       </div>
+                       <button 
+                         onClick={() => {
+                            setIsVisionReady(false);
+                            setIsCameraReady(false);
+                            setIsVisionCrashed(false);
+                            setInitStartTime(Date.now());
+                         }}
+                         className="px-4 py-2 bg-red-500 text-white text-[9px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-red-500/40"
+                       >
+                          Restart AI
+                       </button>
+                    </div>
+                 )}
+              </div>
 
              <div className="absolute bottom-24 inset-x-0 z-50 flex flex-col items-center gap-10">
                 <div className="w-48 h-1.5 bg-slate-900/80 rounded-full overflow-hidden border border-white/5">
@@ -260,6 +361,22 @@ function App() {
                 <div className="bg-emerald-500/10 backdrop-blur-xl px-10 py-3 rounded-full border border-emerald-500/20">
                    <p className="text-[10px] font-black uppercase tracking-[0.5em] text-emerald-500 italic">{visionMode}</p>
                 </div>
+
+                {manualOverride && (
+                   <button 
+                     onClick={() => {
+                        setStatus('green');
+                        setMessage('MANUAL OVERRIDE ACTIVE');
+                        // Use center of screen as mock dime if none found
+                        if (!lastStateRef.current.dime) {
+                           lastStateRef.current.dime = { x: canvasRef.current.width/2, y: canvasRef.current.height/2, r: 80 };
+                        }
+                     }}
+                     className="mt-4 px-6 py-2 bg-slate-900/80 border border-white/10 rounded-full text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-white transition-colors"
+                   >
+                      Skip AI Detection
+                   </button>
+                )}
              </div>
           </div>
         )}
