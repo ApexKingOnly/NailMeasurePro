@@ -24,6 +24,8 @@ function App() {
   const [visionHeartbeat, setVisionHeartbeat] = useState(Date.now())
   const [message, setMessage] = useState('System Booting...')
   const [isStableSignal, setIsStableSignal] = useState(false)
+  const [orientation, setOrientation] = useState({ pitch: 0, roll: 0 }) // V28: Gravity Tracking
+  const [isLeveled, setIsLeveled] = useState(false) // V28: Level Lock State
   
   // Results & Temporary Data
   const [results, setResults] = useState({})
@@ -109,6 +111,32 @@ function App() {
           videoRef.current.srcObject.getTracks().forEach(track => track.stop());
        }
     };
+  }, [currentStep]);
+
+  // V28: HARDWARE LEVELING TRACKER
+  useEffect(() => {
+     if (currentStep !== 'wizard') return;
+
+     const handleOrientation = (e) => {
+        const pitch = e.beta || 0; // -180 to 180
+        const roll = e.gamma || 0; // -90 to 90
+        setOrientation({ pitch, roll });
+        
+        // Parallel-to-Ground Logic (±1.5 Tolerance)
+        const isCurrentlyLeveled = Math.abs(pitch) < 1.5 && Math.abs(roll) < 1.5;
+        setIsLeveled(isCurrentlyLeveled);
+     };
+
+     // iOS Permission Handshake
+     const requestMotion = async () => {
+        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+           try { await DeviceOrientationEvent.requestPermission(); } catch (e) {}
+        }
+        window.addEventListener('deviceorientation', handleOrientation);
+     }
+     requestMotion();
+
+     return () => window.removeEventListener('deviceorientation', handleOrientation);
   }, [currentStep]);
 
   // Stability & Debug Layer (v11 Precision HUD)
@@ -239,9 +267,9 @@ function App() {
          setVisionHeartbeat(Date.now());
          videoDimsRef.current = { w: video.videoWidth, h: video.videoHeight };
          
-         // V27.0: SURGICAL STACK (Dime Center-Top, Nail Center-Bottom)
-         const nBox = { x: 0.32, y: 0.55, w: 0.36, h: 0.35 }; 
-         const dRing = { x: 0.5, y: 0.32, r: 0.12 }; 
+         // V28: CLOSE SURGICAL STACK (Dime Center-Top, Nail Center-Bottom) - CLOSE SPACING
+         const dRing = { x: 0.5, y: 0.35, r: 0.12 }; 
+         const nBox = { x: 0.32, y: 0.48, w: 0.36, h: 0.35 }; 
 
          const drawSurgicalHUD = () => {
             const w = rect.width;
@@ -274,6 +302,27 @@ function App() {
             ctx.lineWidth = 1;
             ctx.beginPath(); ctx.moveTo(dx - 10, dy); ctx.lineTo(dx + 10, dy); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(dx, dy - 10); ctx.lineTo(dx, dy + 10); ctx.stroke();
+
+            // V28: GRAVITY HUD (Pitch/Roll Crosshair Balance)
+            const cx = w/2; const cy = h/2; // Center
+            const mSize = 60; // Meter Size
+            ctx.strokeStyle = isLeveled ? '#10b981' : 'rgba(255,255,255,0.2)';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(cx, cy, 20, 0, 2 * Math.PI); ctx.stroke(); // Static Target
+            ctx.beginPath(); ctx.moveTo(cx - 30, cy); ctx.lineTo(cx + 30, cy); ctx.stroke(); // Static Horizontal
+            ctx.beginPath(); ctx.moveTo(cx, cy - 30); ctx.lineTo(cx, cy + 30); ctx.stroke(); // Static Vertical
+
+            // Dynamic Leveling Dot
+            const dotX = cx + (orientation.roll * 2.5); // Sensitivity 2.5x
+            const dotY = cy + (orientation.pitch * 2.5);
+            ctx.beginPath(); 
+            ctx.arc(dotX, dotY, 6, 0, 2 * Math.PI);
+            ctx.fillStyle = isLeveled ? '#10b981' : '#f43f5e';
+            ctx.fill();
+            if (isLeveled) {
+               ctx.shadowBlur = 20; ctx.shadowColor = '#10b981';
+               ctx.stroke();
+            }
             ctx.restore();
          };
 
@@ -310,28 +359,26 @@ function App() {
                   }
                }
 
-                // V22: UNIVERSAL FINGER DETECTION (ANY fingertip in box)
-                const tipIndices = [4, 8, 12, 16, 20];
-                const fingerInZone = tipIndices.some(idx => {
-                   const tip = hand[idx];
-                   return (tip.x > nBox.x && tip.x < nBox.x + nBox.w && 
-                           tip.y > nBox.y && tip.y < nBox.y + nBox.h);
-                });
-                
                 // V27: Update Snapshot Refs
                 lastHandRef.current = hand;
                 lastDimeRef.current = dimePixels;
 
-                // V25/27: ATOMIC ENGINE - ALWAYS UNLOCKED
-                setIsStableSignal(true); 
-                setMessage("SURGICAL LOCK: ENABLED");
-
-                if (dimeInZone) {
-                   const sizing = getFullSizing(20, dimePixels, hand, rect.width, rect.height);
-                   setMeasurement({ mm: sizing.mm, size: sizing.size });
-                } else {
-                   setMeasurement(null);
-                }
+                 // V28: SHUTTER LOCK LOGIC (Leveled + Dime Found)
+                 const dimeDetected = dimePixels > 0;
+                 if (isLeveled && dimeDetected) {
+                    setIsStableSignal(true);
+                    setMessage("TARGET LOCKED (READY)");
+                    const sizing = getFullSizing(20, dimePixels, hand, rect.width, rect.height);
+                    setMeasurement({ mm: sizing.mm, size: sizing.size });
+                 } else if (!isLeveled) {
+                    setIsStableSignal(false);
+                    setMessage("TILT TO LEVEL ⚖️");
+                    setMeasurement(null);
+                 } else {
+                    setIsStableSignal(false);
+                    setMessage("Dime not found ⭕");
+                    setMeasurement(null);
+                 }
 
                src.delete(); gray.delete(); circles.delete();
             } catch (cvErr) {
@@ -357,7 +404,7 @@ function App() {
 
     processFrame();
     return () => cancelAnimationFrame(frameIdRef.current);
-  }, [isVisionReady, currentStep, isVisionCrashed, isStableSignal]);
+  }, [isVisionReady, currentStep, isVisionCrashed, isStableSignal, isLeveled, orientation]);
 
   // Phase 4: Capture & Sequence (Surgical Refactor)
    const captureShot = () => {
@@ -415,7 +462,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V27.2 SURGICAL FORCE | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V28.0 LEVEL & LOCK | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
