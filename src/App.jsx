@@ -153,40 +153,39 @@ function App() {
           await readiness;
           logToHUD("Precision Space READY.");
 
-          // V10: DYNAMIC IMPORT (RELIABILITY OVERRIDE)
-          logToHUD("Summoning V11 Vision Core...");
+          logToHUD("V11.1: Summoning Vision Core...");
           const visionLib = await import("@mediapipe/tasks-vision");
           const { FilesetResolver, HandLandmarker } = visionLib;
           
           if (!FilesetResolver || !HandLandmarker) {
-             throw new Error("V11: Vision Modules Undefined");
+             throw new Error("V11.1: Vision Modules Undefined");
           }
 
-          const vision = await FilesetResolver.forVisionTasks(
-             "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-          );
+          // V11.1: TOTAL SAME-ORIGIN ISOLATION
+          logToHUD("V11.1: Virtualizing Local Brain...");
+          const vision = await FilesetResolver.forVisionTasks("/wasm");
 
-          // Atomic Handlandmarker Initialization (V11-PRECISION)
+          // Atomic Handlandmarker Initialization (V11.1-SURGICAL)
           try {
-             logToHUD("Initializing V11 Kernel...");
+             logToHUD("Initializing V11.1 Local Kernel...");
              handsRef.current = await HandLandmarker.createFromOptions(vision, {
                 baseOptions: {
-                   modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                   modelAssetPath: `/hand_landmarker.task`,
                    delegate: "GPU"
                 },
                 runningMode: "VIDEO", numHands: 1
              });
-             logToHUD("V11 KERNEL ONLINE.");
+             logToHUD("V11.1 LOCAL KERNEL ONLINE.");
           } catch (gpuErr) {
-             logToHUD("GPU Locked via V11. Falling back to Core CPU...");
+             logToHUD("GPU Locked via V11.1. Falling back to Local CPU...");
              handsRef.current = await HandLandmarker.createFromOptions(vision, {
                baseOptions: {
-                  modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                  modelAssetPath: `/hand_landmarker.task`,
                   delegate: "CPU"
                },
                runningMode: "VIDEO", numHands: 1
             });
-            logToHUD("V11 CORE CPU ACTIVE.");
+            logToHUD("V11.1 LOCAL CPU ACTIVE.");
           }
 
           setIsVisionReady(true);
