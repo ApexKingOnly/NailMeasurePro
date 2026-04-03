@@ -305,9 +305,14 @@ function App() {
                   }
                }
 
-               // Check if Nails are in Box (Landmark 8: Index Tip)
-               const fingerInZone = (hand[8].x > nBox.x && hand[8].x < nBox.x + nBox.w && 
-                                    hand[8].y > nBox.y && hand[8].y < nBox.y + nBox.h);
+                // Check if ACTIVE FINGER is in Box (Dynamic Landmark Mapping)
+                const currentStepLabel = steps[shotNumber-1];
+                const landmarkIndices = { "Pinky": 20, "Ring": 16, "Middle": 12, "Pointer": 8, "Thumb": 4 };
+                const tipIdx = Object.entries(landmarkIndices).find(([k]) => currentStepLabel.includes(k))?.[1] || 8;
+                
+                const fingerTip = hand[tipIdx];
+                const fingerInZone = (fingerTip.x > nBox.x && fingerTip.x < nBox.x + nBox.w && 
+                                     fingerTip.y > nBox.y && fingerTip.y < nBox.y + nBox.h);
 
                if (dimeInZone && fingerInZone) {
                   const sizing = getFullSizing(20, dimePixels, hand, rect.width, rect.height);
@@ -392,7 +397,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V20.0 MINIMALIST SURGICAL HUD | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V21.0 DYNAMIC FINGER TRACKING | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
