@@ -131,36 +131,37 @@ function App() {
        try {
           if (!librariesLoaded) {
              setLibrariesLoaded(true);
+             logToHUD("Initiating 4G-Optimized Injection...");
              await Promise.all([
-               loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js', 'vision-core'),
-               loadScript('https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.7.0-release.1/dist/opencv.js', 'cv-core')
+               loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.js', 'vision-v5'),
+               loadScript('https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.7.0/opencv.js', 'cv-stable')
              ]);
           }
 
-          logToHUD("Script handshake successful.");
+          logToHUD("Script injection successful.");
           const readiness = new Promise((resolve, reject) => {
-             const timeout = setTimeout(() => reject(new Error("Handshake Timeout")), 15000);
+             const timeout = setTimeout(() => reject(new Error("Network Handshake Timeout (30s)")), 30000);
              const check = () => {
                 if (window.vision && window.cv && window.cv.Mat) {
                    clearTimeout(timeout);
                    resolve();
                 } else {
-                   setTimeout(check, 250);
+                   setTimeout(check, 300);
                 }
              };
              check();
           });
 
           await readiness;
-          logToHUD("AI Namespace ready.");
+          logToHUD("Atomic AI Space ready.");
 
           const vision = await window.vision.FilesetResolver.forVisionTasks(
              "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
           );
 
-          // RESILIENCE LOOP: GPU -> CPU
+          // V7-OPTIMIZED BOOT SEQUENCE
           try {
-             logToHUD("Attempting GPU Delegation...");
+             logToHUD("Booting High-Speed GPU Kernel...");
              handsRef.current = await window.vision.HandLandmarker.createFromOptions(vision, {
                 baseOptions: {
                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
@@ -168,10 +169,9 @@ function App() {
                 },
                 runningMode: "VIDEO", numHands: 1
              });
-             logToHUD("GPU Initialization SUCCESS.");
+             logToHUD("GPU Kernel V7 ONLINE.");
           } catch (gpuErr) {
-             logToHUD(`GPU Failed: ${gpuErr.message.slice(0, 30)}...`);
-             logToHUD("Falling back to CPU Mode...");
+             logToHUD("GPU Locked. Fallback to High-Performance CPU...");
              handsRef.current = await window.vision.HandLandmarker.createFromOptions(vision, {
                baseOptions: {
                   modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
@@ -179,11 +179,11 @@ function App() {
                },
                runningMode: "VIDEO", numHands: 1
             });
-            logToHUD("CPU Initialization SUCCESS.");
+            logToHUD("CPU Kernel V7 ONLINE.");
           }
 
           setIsVisionReady(true);
-          setMessage('READY (PHOENIX ENGINE)');
+          setMessage('READY (V7-OPTIMIZED)');
        } catch (err) {
           logToHUD(`FATAL: ${err.message}`);
           setIsVisionCrashed(true);
