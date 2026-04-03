@@ -138,13 +138,13 @@ function App() {
 
           logToHUD("Native script handshake successful.");
           const readiness = new Promise((resolve, reject) => {
-             const timeout = setTimeout(() => reject(new Error("Vision Core Hub Timeout")), 15000);
+             const timeout = setTimeout(() => reject(new Error("Vision Core Hub Timeout (60s Exhausted)")), 60000);
              const check = () => {
                 if (window.cv && window.cv.Mat) {
                    clearTimeout(timeout);
                    resolve();
                 } else {
-                   setTimeout(check, 300);
+                   setTimeout(check, 500);
                 }
              };
              check();
@@ -403,15 +403,21 @@ function App() {
 
           {/* CRITICAL RECOVERY OVERLAY */}
           {isVisionCrashed && (
-             <div className="absolute inset-0 bg-slate-950/98 backdrop-blur-2xl flex flex-col items-center justify-center p-6 text-center z-50 overflow-hidden">
-                <ShieldAlert className="w-12 h-12 text-rose-500 mb-4 animate-bounce" />
-                <h2 className="text-xl font-black text-white mb-2 tracking-tighter uppercase leading-none">RECOVERY HUD ACTIVE</h2>
-                <div className="w-full max-w-sm bg-black border border-slate-800 rounded-xl p-4 mb-8 text-left h-48 overflow-y-auto font-mono text-[10px] shadow-inner">
-                   {debugLog.length > 0 ? debugLog.map((log, i) => (
-                      <div key={i} className="text-emerald-500/80 mb-1 leading-tight">{log}</div>
-                   )) : <div className="text-slate-600 italic">No logs available...</div>}
+             <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-8 text-center z-[200] animate-in fade-in duration-500">
+                <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mb-6 ring-4 ring-rose-500/20">
+                   <ShieldAlert className="w-10 h-10 text-rose-500" />
                 </div>
-                <button onClick={() => window.location.reload()} className="w-full max-w-[240px] py-4 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl shadow-2xl transition-all active:scale-95 uppercase text-xs tracking-widest">RESTART PRECISION KERNEL</button>
+                <h2 className="text-2xl font-black text-white mb-2 tracking-tighter uppercase italic">ENGINE LOCKDOWN</h2>
+                <p className="text-slate-400 text-xs max-w-[280px] mb-8 font-medium leading-relaxed uppercase tracking-widest opacity-60">Surgical vision core stalled on Vercel Node. System logs below:</p>
+                
+                <div className="w-full max-w-sm bg-black border border-slate-800 rounded-2xl p-5 mb-10 text-left h-56 overflow-y-auto font-mono text-[10px] shadow-2xl relative">
+                   <div className="absolute top-0 right-0 p-2 text-[8px] text-slate-700 font-black">V12 RELAY</div>
+                   {debugLog.length > 0 ? debugLog.map((log, i) => (
+                      <div key={i} className="text-emerald-500/80 mb-1.5 leading-tight tracking-tight border-l border-emerald-500/20 pl-2">{log}</div>
+                   )) : <div className="text-slate-600 italic">Synchronizing Logs...</div>}
+                </div>
+
+                <button onClick={() => window.location.reload()} className="w-full max-w-[280px] py-5 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl shadow-2xl transition-all active:scale-95 uppercase text-xs tracking-[0.2em] ring-4 ring-rose-600/10">FORCE SYSTEM RESTART</button>
              </div>
           )}
        </div>
