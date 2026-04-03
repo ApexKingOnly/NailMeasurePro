@@ -11,8 +11,8 @@ function App() {
   const [currentStep, setCurrentStep] = useState('welcome')
   const [shotNumber, setShotNumber] = useState(1)
   const steps = [
-    "Left Little", "Left Ring", "Left Middle", "Left Index", "Left Thumb",
-    "Right Thumb", "Right Index", "Right Middle", "Right Ring", "Right Little"
+    "Left Pinky", "Left Ring", "Left Middle", "Left Pointer", "Left Thumb",
+    "Right Thumb", "Right Pointer", "Right Middle", "Right Ring", "Right Pinky"
   ]
   
   // Vision Health & Stability
@@ -222,14 +222,18 @@ function App() {
          setVisionHeartbeat(Date.now());
          ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-         // V14: PERMANENT HUD OVERLAYS (Always Visible)
-         const dRing = { x: 0.75, y: 0.5, r: 0.12 }; // Middle-Right for Dime
-         const nBox = { x: 0.1, y: 0.3, w: 0.4, h: 0.4 }; // Middle-Left for Solo Nail
+         // V15: VERTICAL PRECISION HUD (Portrait Optimized)
+         const nBox = { x: 0.25, y: 0.15, w: 0.5, h: 0.35 }; // Top-Center for Nail
+         const dRing = { x: 0.5, y: 0.75, r: 0.15 }; // Bottom-Center for Dime
 
-         ctx.setLineDash([8, 8]);
-         ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-         ctx.lineWidth = 4;
+         ctx.setLineDash([10, 5]);
+         ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+         ctx.lineWidth = 5;
+         
+         // 🔳 Drawing Nail Box
          ctx.strokeRect(nBox.x * canvas.width, nBox.y * canvas.height, nBox.w * canvas.width, nBox.h * canvas.height);
+         
+         // ⭕ Drawing Dime Ring
          ctx.beginPath();
          ctx.arc(dRing.x * canvas.width, dRing.y * canvas.height, dRing.r * canvas.width, 0, 2 * Math.PI);
          ctx.stroke();
@@ -252,14 +256,14 @@ function App() {
                   const cx = circles.data32F[0] / canvas.width;
                   const cy = circles.data32F[1] / canvas.height;
                   
-                  // Check if Dime is in HUD Ring
+                  // Check if Dime is in HUD Ring (Sweet Spot Center)
                   const dist = Math.sqrt(Math.pow(cx - dRing.x, 2) + Math.pow(cy - dRing.y, 2));
                   if (dist < dRing.r) {
                      dimeInZone = true;
                      dimePixels = circles.data32F[2] * 2;
                      ctx.setLineDash([]);
                      ctx.beginPath(); ctx.arc(circles.data32F[0], circles.data32F[1], circles.data32F[2], 0, 2 * Math.PI);
-                     ctx.strokeStyle = '#10b981'; ctx.lineWidth = 6; ctx.stroke();
+                     ctx.strokeStyle = '#10b981'; ctx.lineWidth = 8; ctx.stroke();
                   }
                }
 
@@ -284,10 +288,12 @@ function App() {
                console.warn("CV Frame Error:", cvErr);
             }
 
-            // Draw Skeleton (Native Fallback)
+            // V15: LANDMARK PURGE (Professional Clean UI)
+            // Hiding skeleton points to ensure surgical clarity
             hand.forEach(lm => {
-               ctx.beginPath(); ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 3, 0, 2 * Math.PI);
-               ctx.fillStyle = isStableSignal ? '#10b981' : '#f43f5e'; ctx.fill();
+               // Points are visible only if you have 'Stable Signal' and only at 10% opacity
+               ctx.beginPath(); ctx.arc(lm.x * canvas.width, lm.y * canvas.height, 2, 0, 2 * Math.PI);
+               ctx.fillStyle = isStableSignal ? 'rgba(16, 185, 129, 0.4)' : 'transparent'; ctx.fill();
             });
          } else {
             setIsStableSignal(false);
@@ -351,7 +357,7 @@ function App() {
           <Scan className="w-10 h-10 text-emerald-400" />
        </div>
        <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V14.0 MACRO-SURGICAL HUD | PRECISION MASTER</p>
+       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V16.0 SEQUENTIAL SOLO ENGINE | PRECISION MASTER</p>
        
        <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
           <div className="flex items-center gap-4 mb-4">
@@ -361,7 +367,7 @@ function App() {
           <ul className="grid grid-cols-2 gap-x-8 gap-y-3">
              {steps.map(s => (
                 <li key={s} className="flex items-center gap-2 text-slate-400 font-black text-[9px] uppercase tracking-widest leading-none">
-                   <ChevronRight className="w-3 h-3 text-emerald-500 shrink-0" /> {s.replace('Left ', 'L ').replace('Right ', 'R ')}
+                   <ChevronRight className="w-3 h-3 text-emerald-500 shrink-0" /> {s.replace('Left ', 'L-').replace('Right ', 'R-')}
                 </li>
              ))}
           </ul>

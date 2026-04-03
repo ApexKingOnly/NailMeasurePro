@@ -60,7 +60,7 @@ export const getFullSizing = (pixelWidth, dimePixels, handLandmarks, canvasWidth
   const mm = calculateMM(pixelWidth, dimePixels);
   const size = mmToNailSize(mm);
   
-  let guidance = "Position Hand...";
+  let guidance = "Position Target...";
   let isStable = false;
 
   if (handLandmarks) {
@@ -69,10 +69,10 @@ export const getFullSizing = (pixelWidth, dimePixels, handLandmarks, canvasWidth
     const x = wrist.x;
     const y = wrist.y;
 
-    if (x < 0.3) guidance = "Move Hand Right ⮕";
-    else if (x > 0.7) guidance = "⬅ Move Hand Left";
-    else if (y < 0.2) guidance = "Move Hand Down ⬇";
-    else if (y > 0.8) guidance = "⬆ Move Hand Up";
+    if (x < 0.3) guidance = "Move Target Right ⮕";
+    else if (x > 0.7) guidance = "⬅ Move Target Left";
+    else if (y < 0.2) guidance = "Move Target Down ⬇";
+    else if (y > 0.8) guidance = "⬆ Move Target Up";
     else if (!dimePixels || dimePixels < 10) {
        guidance = "Place Dime in Circle ⭕";
     } else {
