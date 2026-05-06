@@ -1,10 +1,10 @@
 /**
  * Sizing Engine for NailScale AI
  * 
- * Reference: US Dime = 17.91mm
+ * Reference: US Quarter = 24.26mm
  */
 
-const DIME_MM = 17.91;
+const QUARTER_MM = 24.26;
 
 // Standard sizing chart (mm -> Size ID)
 // Based on typical press-on nail width ranges
@@ -23,11 +23,11 @@ const SIZING_CHART = [
 ];
 
 /**
- * Calculates millimeters from pixel width based on dime calibration
+ * Calculates millimeters from pixel width based on quarter calibration
  */
-export const calculateMM = (pixelWidth, dimePixels) => {
-  if (!dimePixels || dimePixels === 0) return 0;
-  const ratio = DIME_MM / dimePixels;
+export const calculateMM = (pixelWidth, quarterPixels) => {
+  if (!Number.isFinite(pixelWidth) || !Number.isFinite(quarterPixels) || pixelWidth <= 0 || quarterPixels <= 0) return 0;
+  const ratio = QUARTER_MM / quarterPixels;
   return pixelWidth * ratio;
 };
 
@@ -62,7 +62,8 @@ export const mmToNailSize = (mm) => {
  * Uses the tip (e.g. 8) and DIP joint (e.g. 7) to estimate local width.
  */
 export const calculateFingerWidthPixels = (hand, fingerIndex, canvasWidth, canvasHeight) => {
-  if (!hand || !hand[fingerIndex]) return 20; // Safe Fallback
+  if (!hand || !hand[fingerIndex] || !hand[fingerIndex - 1]) return 0;
+  if (!Number.isFinite(canvasWidth) || !Number.isFinite(canvasHeight) || canvasWidth <= 0 || canvasHeight <= 0) return 0;
 
   const tip = hand[fingerIndex];
   const dip = hand[fingerIndex - 1]; // DIP joint is the previous landmark in MD sequence for non-thumb
@@ -73,19 +74,19 @@ export const calculateFingerWidthPixels = (hand, fingerIndex, canvasWidth, canva
   const phalanxLength = Math.sqrt(dx * dx + dy * dy);
 
   // Distal Phalanx Aspect Ratio: Typically width is ~0.85 of length
-  return phalanxLength * 0.85;
+  return Number.isFinite(phalanxLength) ? phalanxLength * 0.85 : 0;
 };
 
-export const getFullSizing = (pixelWidth, dimePixels, handLandmarks, canvasWidth, canvasHeight) => {
-  const mm = calculateMM(pixelWidth, dimePixels);
+export const getFullSizing = (pixelWidth, quarterPixels, handLandmarks, canvasWidth, canvasHeight) => {
+  const mm = calculateMM(pixelWidth, quarterPixels);
   const size = mmToNailSize(mm);
   
   let guidance = "Position Target...";
   let isStable = false;
 
   if (handLandmarks) {
-    if (!dimePixels || dimePixels < 1) {
-       guidance = "Place Dime in Circle ⭕";
+    if (!quarterPixels || quarterPixels < 1) {
+       guidance = "Place Quarter in Circle";
     } else {
        // 2. Tilt/Orientation Check (Simple Plane Delta)
        const mcpY = (handLandmarks[5].y + handLandmarks[17].y) / 2;

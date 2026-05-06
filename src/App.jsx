@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Camera, ShieldAlert, Scan, X, RotateCcw, CheckCircle2, ChevronRight, Info } from 'lucide-react'
+import { Camera, ShieldAlert, Scan, X, CheckCircle2, ChevronRight } from 'lucide-react'
 import { getFullSizing, calculateFingerWidthPixels } from './utils/sizing'
 
 // V30: Explicit 10-Finger Sequence Mapping
@@ -22,11 +22,8 @@ function App() {
   const [isVisionReady, setIsVisionReady] = useState(false)
   const [isVisionCrashed, setIsVisionCrashed] = useState(false)
   const [librariesLoaded, setLibrariesLoaded] = useState(false)
-  const [visionHeartbeat, setVisionHeartbeat] = useState(Date.now())
   const [message, setMessage] = useState('System Booting...')
   const [isStableSignal, setIsStableSignal] = useState(false)
-  const [orientation, setOrientation] = useState({ pitch: 0, roll: 0 }) // V28: Gravity Tracking
-  const [isLeveled, setIsLeveled] = useState(false) // V28: Level Lock State
   
   // Results & Temporary Data
   const [results, setResults] = useState({})
@@ -39,8 +36,15 @@ function App() {
   const handsRef = useRef(null)
   const frameIdRef = useRef(null)
   const lastHandRef = useRef(null) // V27: Sync Capture Hand Ref
-  const lastDimeRef = useRef(0) // V27: Sync Capture Dime Ref
+  const lastQuarterRef = useRef(0) // V27: Sync Capture Quarter Ref
   const videoDimsRef = useRef({ w: 0, h: 0 }) // V27: Sync Capture Dims Ref
+  const orientationRef = useRef({ pitch: 0, roll: 0 })
+  const isLeveledRef = useRef(false)
+  const isStableSignalRef = useRef(false)
+  const shotNumberRef = useRef(1)
+
+  useEffect(() => { shotNumberRef.current = shotNumber }, [shotNumber])
+  useEffect(() => { isStableSignalRef.current = isStableSignal }, [isStableSignal])
 
   // Launch Protocol
   const startWizard = () => {
@@ -53,6 +57,16 @@ function App() {
     setIsCameraReady(false)
     setIsVisionReady(false)
     setIsVisionCrashed(false)
+    setIsStableSignal(false)
+    setMeasurement(null)
+    setResults({})
+    setMessage('Activating Hardware...')
+    lastHandRef.current = null
+    lastQuarterRef.current = 0
+    videoDimsRef.current = { w: 0, h: 0 }
+    orientationRef.current = { pitch: 0, roll: 0 }
+    isLeveledRef.current = false
+    isStableSignalRef.current = false
   }
 
   // Phase 0: Environment Lockdown (2s)
@@ -66,39 +80,77 @@ function App() {
     if (currentStep !== 'wizard') return;
 
     let pollCount = 0;
+    let pollTimer = null;
+    let cameraRequestTimer = null;
+    let cancelled = false;
     const maxPolls = 100; // 10 seconds
 
+    const requestStream = (constraints, timeoutMs = 10000) => {
+       cameraRequestTimer = setTimeout(() => {
+          if (!cancelled) setMessage('Allow camera permission to continue');
+       }, timeoutMs);
+
+       return navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+          if (cancelled) {
+             stream.getTracks().forEach(track => track.stop());
+             return null;
+          }
+          return stream;
+       }).finally(() => {
+          if (cameraRequestTimer) clearTimeout(cameraRequestTimer);
+       });
+    };
+
     const checkDimensions = () => {
+       if (cancelled) return;
        if (videoRef.current?.videoWidth > 0) {
           setIsCameraReady(true);
        } else if (pollCount < maxPolls && currentStep === 'wizard') {
           pollCount++;
-          setTimeout(checkDimensions, 100);
+          pollTimer = setTimeout(checkDimensions, 100);
        } else {
           setMessage('Camera Hardware Timeout');
        }
     };
 
     const startCamera = async () => {
+       if (!navigator.mediaDevices?.getUserMedia) {
+          setMessage('Camera API Not Available');
+          return;
+       }
+
        try {
           setMessage('Activating Hardware...');
-          const stream = await navigator.mediaDevices.getUserMedia({
+          const stream = await requestStream({
              video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
           });
-          if (videoRef.current) {
+          if (!stream) return;
+          if (cancelled) {
+             stream.getTracks().forEach(track => track.stop());
+             return;
+          }
+          if (!cancelled && videoRef.current) {
              videoRef.current.srcObject = stream;
              videoRef.current.onloadedmetadata = () => {
-                videoRef.current.play();
+                videoRef.current.play().catch(() => setMessage('Tap to Allow Camera Playback'));
                 checkDimensions();
              }
           }
        } catch (err) {
           // Fallback to front camera if environment fails
           try {
-             const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
-             if (videoRef.current) {
+             const fallbackStream = await requestStream({ video: true });
+             if (!fallbackStream) return;
+             if (cancelled) {
+                fallbackStream.getTracks().forEach(track => track.stop());
+                return;
+             }
+             if (!cancelled && videoRef.current) {
                 videoRef.current.srcObject = fallbackStream;
-                videoRef.current.onloadedmetadata = () => { videoRef.current.play(); checkDimensions(); }
+                videoRef.current.onloadedmetadata = () => {
+                   videoRef.current.play().catch(() => setMessage('Tap to Allow Camera Playback'));
+                   checkDimensions();
+                }
              }
           } catch (e) {
              setMessage('Camera Permission Required');
@@ -108,6 +160,9 @@ function App() {
     startCamera();
 
     return () => {
+       cancelled = true;
+       if (pollTimer) clearTimeout(pollTimer);
+       if (cameraRequestTimer) clearTimeout(cameraRequestTimer);
        if (videoRef.current?.srcObject) {
           videoRef.current.srcObject.getTracks().forEach(track => track.stop());
        }
@@ -121,17 +176,34 @@ function App() {
      const handleOrientation = (e) => {
         const pitch = e.beta || 0; // -180 to 180
         const roll = e.gamma || 0; // -90 to 90
-        setOrientation({ pitch, roll });
+        orientationRef.current = { pitch, roll };
         
         // Parallel-to-Ground Logic (±1.5 Tolerance)
         const isCurrentlyLeveled = Math.abs(pitch) < 1.5 && Math.abs(roll) < 1.5;
-        setIsLeveled(isCurrentlyLeveled);
+        isLeveledRef.current = isCurrentlyLeveled;
      };
 
      // iOS Permission Handshake
      const requestMotion = async () => {
-        if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-           try { await DeviceOrientationEvent.requestPermission(); } catch (e) {}
+        const OrientationEvent = window.DeviceOrientationEvent;
+        if (!OrientationEvent) {
+           isLeveledRef.current = true;
+           return;
+        }
+
+        if (typeof OrientationEvent.requestPermission === 'function') {
+           try {
+              const permission = await OrientationEvent.requestPermission();
+              if (permission !== 'granted') {
+                 isLeveledRef.current = true;
+                 setMessage('Level sensor unavailable; continue carefully');
+                 return;
+              }
+           } catch (e) {
+              isLeveledRef.current = true;
+              setMessage('Level sensor unavailable; continue carefully');
+              return;
+           }
         }
         window.addEventListener('deviceorientation', handleOrientation);
      }
@@ -265,11 +337,10 @@ function App() {
          const startTimeMs = performance.now();
          const results = handsRef.current.detectForVideo(video, startTimeMs);
          
-         setVisionHeartbeat(Date.now());
          videoDimsRef.current = { w: video.videoWidth, h: video.videoHeight };
          
-         // V28: CLOSE SURGICAL STACK (Dime Center-Top, Nail Center-Bottom) - CLOSE SPACING
-         const dRing = { x: 0.5, y: 0.35, r: 0.12 }; 
+         // V28: CLOSE SURGICAL STACK (Quarter Center-Top, Nail Center-Bottom) - CLOSE SPACING
+         const quarterRing = { x: 0.5, y: 0.35, r: 0.12 }; 
          const nBox = { x: 0.32, y: 0.48, w: 0.36, h: 0.35 }; 
 
          const drawSurgicalHUD = () => {
@@ -295,8 +366,8 @@ function App() {
             // Bottom-Right
             ctx.beginPath(); ctx.moveTo(bx + bw - cl, by + bh); ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx + bw, by + bh - cl); ctx.stroke();
 
-            // ⭕ Scaling Target (Dime Crosshair)
-            const dx = dRing.x * w; const dy = dRing.y * h; const dr = dRing.r * w;
+            // Scaling Target (Quarter Crosshair)
+            const dx = quarterRing.x * w; const dy = quarterRing.y * h; const dr = quarterRing.r * w;
             ctx.setLineDash([8, 12]);
             ctx.beginPath(); ctx.arc(dx, dy, dr, 0, 2 * Math.PI); ctx.stroke();
             ctx.setLineDash([]);
@@ -305,22 +376,23 @@ function App() {
             ctx.beginPath(); ctx.moveTo(dx, dy - 10); ctx.lineTo(dx, dy + 10); ctx.stroke();
 
             // V28: GRAVITY HUD (Pitch/Roll Crosshair Balance)
+            const currentOrientation = orientationRef.current;
+            const currentlyLeveled = isLeveledRef.current;
             const cx = w/2; const cy = h/2; // Center
-            const mSize = 60; // Meter Size
-            ctx.strokeStyle = isLeveled ? '#10b981' : 'rgba(255,255,255,0.2)';
+            ctx.strokeStyle = currentlyLeveled ? '#10b981' : 'rgba(255,255,255,0.2)';
             ctx.lineWidth = 2;
             ctx.beginPath(); ctx.arc(cx, cy, 20, 0, 2 * Math.PI); ctx.stroke(); // Static Target
             ctx.beginPath(); ctx.moveTo(cx - 30, cy); ctx.lineTo(cx + 30, cy); ctx.stroke(); // Static Horizontal
             ctx.beginPath(); ctx.moveTo(cx, cy - 30); ctx.lineTo(cx, cy + 30); ctx.stroke(); // Static Vertical
 
             // Dynamic Leveling Dot
-            const dotX = cx + (orientation.roll * 2.5); // Sensitivity 2.5x
-            const dotY = cy + (orientation.pitch * 2.5);
+            const dotX = cx + (currentOrientation.roll * 2.5); // Sensitivity 2.5x
+            const dotY = cy + (currentOrientation.pitch * 2.5);
             ctx.beginPath(); 
             ctx.arc(dotX, dotY, 6, 0, 2 * Math.PI);
-            ctx.fillStyle = isLeveled ? '#10b981' : '#f43f5e';
+            ctx.fillStyle = currentlyLeveled ? '#10b981' : '#f43f5e';
             ctx.fill();
-            if (isLeveled) {
+            if (currentlyLeveled) {
                ctx.shadowBlur = 20; ctx.shadowColor = '#10b981';
                ctx.stroke();
             }
@@ -335,27 +407,31 @@ function App() {
             // V30 Fix: Move landmark assignment out of volatile CV block!
             lastHandRef.current = hand;
 
-            // OpenCV Dime Logic
+            // OpenCV Quarter Logic
+            let src = null;
+            let gray = null;
+            let circles = null;
             try {
-               const src = cv.imread(video);
-               const gray = new cv.Mat();
+               const cv = window.cv;
+               if (!cv?.Mat) throw new Error('OpenCV unavailable');
+
+               src = cv.imread(video);
+               gray = new cv.Mat();
                cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-               const circles = new cv.Mat();
-               cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1.2, 45, 50, 22, 20, 150); 
+               circles = new cv.Mat();
+               cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1.2, 45, 50, 22, 25, 200); 
                
-               let dimePixels = 0;
-               let dimeInZone = false;
+               let quarterPixels = 0;
 
                if (circles.cols > 0) {
                   const cx = circles.data32F[0] / video.videoWidth;
                   const cy = circles.data32F[1] / video.videoHeight;
                   
-                  // Check if Dime is in HUD Ring (Sweet Spot Center)
+                  // Check if quarter is in HUD ring (sweet spot center)
                   // V24: RELAXED ZONE CHECK (50% Allowance)
-                  const dist = Math.sqrt(Math.pow(cx - dRing.x, 2) + Math.pow(cy - dRing.y, 2));
-                  if (dist < dRing.r * 1.5) {
-                     dimeInZone = true;
-                     dimePixels = circles.data32F[2] * 2;
+                  const dist = Math.sqrt(Math.pow(cx - quarterRing.x, 2) + Math.pow(cy - quarterRing.y, 2));
+                  if (dist < quarterRing.r * 1.5) {
+                     quarterPixels = circles.data32F[2] * 2;
                      // DIMENSIONS MAPPING (Visual Feedback)
                      ctx.setLineDash([]);
                      ctx.beginPath(); ctx.arc(circles.data32F[0]/ratio, circles.data32F[1]/ratio, circles.data32F[2]/ratio, 0, 2 * Math.PI);
@@ -364,31 +440,34 @@ function App() {
                }
 
                 // V27: Update Snapshot Refs
-                lastDimeRef.current = dimePixels;
+                lastQuarterRef.current = quarterPixels;
 
-                 // V28: SHUTTER LOCK LOGIC (Leveled + Dime Found)
-                 const dimeDetected = dimePixels > 0;
-                 if (isLeveled && dimeDetected) {
+                 // V28: SHUTTER LOCK LOGIC (Leveled + Quarter Found)
+                 const quarterDetected = quarterPixels > 0;
+                 if (isLeveledRef.current && quarterDetected) {
                     setIsStableSignal(true);
                     setMessage("TARGET LOCKED (READY)");
                     
                     // V29: Get finger index for current shot
-                    const fingerIndex = getFingerIndexForShot(shotNumber); 
+                    const fingerIndex = getFingerIndexForShot(shotNumberRef.current); 
                     const fingerPx = calculateFingerWidthPixels(hand, fingerIndex, rect.width, rect.height);
                     
-                    const sizing = getFullSizing(fingerPx, dimePixels, hand, rect.width, rect.height);
-                    setMeasurement({ mm: sizing.mm, size: sizing.size });
-                 } else if (!isLeveled) {
+                    const sizing = getFullSizing(fingerPx, quarterPixels, hand, rect.width, rect.height);
+                    setMeasurement(prev => (
+                       prev?.mm === sizing.mm && prev?.size === sizing.size
+                          ? prev
+                          : { mm: sizing.mm, size: sizing.size }
+                    ));
+                 } else if (!isLeveledRef.current) {
                     setIsStableSignal(false);
-                    setMessage("TILT TO LEVEL ⚖️");
+                    setMessage("Tilt phone until level");
                     setMeasurement(null);
                  } else {
                     setIsStableSignal(false);
-                    setMessage("Dime not found ⭕");
+                    setMessage("Quarter not found");
                     setMeasurement(null);
                  }
 
-               src.delete(); gray.delete(); circles.delete();
             } catch (cvErr) {
                console.warn("CV Frame Error:", cvErr);
                
@@ -396,16 +475,20 @@ function App() {
                setIsStableSignal(false);
                setMessage("Analyzing Environment...");
                setMeasurement(null);
+            } finally {
+               src?.delete?.();
+               gray?.delete?.();
+               circles?.delete?.();
             }
 
             // V15: LANDMARK PURGE (Professional Clean UI)
             hand.forEach(lm => {
                ctx.beginPath(); ctx.arc(lm.x * rect.width, lm.y * rect.height, 2, 0, 2 * Math.PI);
-               ctx.fillStyle = isStableSignal ? 'rgba(16, 185, 129, 0.4)' : 'transparent'; ctx.fill();
+               ctx.fillStyle = isStableSignalRef.current ? 'rgba(16, 185, 129, 0.4)' : 'transparent'; ctx.fill();
             });
          } else {
             setIsStableSignal(false);
-            setMessage("Focus on Nail Target Box 🔳");
+            setMessage("Focus on nail target box");
             setMeasurement(null);
          }
       } catch (err) { /* Frame drop silent */ }
@@ -417,33 +500,21 @@ function App() {
 
     processFrame();
     return () => cancelAnimationFrame(frameIdRef.current);
-  }, [isVisionReady, currentStep, isVisionCrashed, isStableSignal, isLeveled, orientation]);
+  }, [isVisionReady, currentStep]);
 
   // Phase 4: Capture & Sequence (Surgical Refactor)
    const captureShot = () => {
-    // V27: ATOMIC SEQUENCE & PROXY CALIBRATION
+    if (!isStableSignal || !measurement) {
+      setMessage('Wait for target lock before capture');
+      return;
+    }
+
     if (navigator.vibrate) { try { navigator.vibrate(15); } catch(e){} }
     setShutterFlash(true);
     setTimeout(() => setShutterFlash(false), 80);
 
     const fingerName = steps[shotNumber-1];
-    
-    // 1. Resolve Data (Measurement -> Sync Ref -> Proxy)
-    let finalData = measurement;
-    
-    if (!finalData && lastHandRef.current) {
-       // Late-Binding Fallback: Use Dynamic Landmark Width (Fixes Size 0)
-       const fingerIndex = getFingerIndexForShot(shotNumber);
-       const fingerPx = calculateFingerWidthPixels(lastHandRef.current, fingerIndex, videoDimsRef.current.w, videoDimsRef.current.h);
-       const proxyDime = lastDimeRef.current || (videoDimsRef.current.w * 0.24);
-       
-       const sizing = getFullSizing(fingerPx, proxyDime, lastHandRef.current, videoDimsRef.current.w, videoDimsRef.current.h);
-       finalData = { mm: sizing.mm, size: sizing.size };
-    }
-    
-    // Final Safety Guard - Avoids Size 0 silently by marking ERR
-    const record = finalData || { mm: "Err", size: "Err" };
-    setResults(prev => ({ ...prev, [fingerName]: record }));
+    setResults(prev => ({ ...prev, [fingerName]: measurement }));
     
     if (shotNumber < 10) {
       setShotNumber(prev => prev + 1);
@@ -552,7 +623,10 @@ function App() {
 
        {/* HUD TOP: AI STATUS */}
        <div className="absolute top-12 inset-x-0 flex flex-col items-center gap-3 z-30 pointer-events-none">
-          
+          <div className={`px-4 py-1.5 rounded-full border text-[10px] font-black tracking-widest uppercase shadow-xl ${isStableSignal ? 'bg-emerald-500/90 text-slate-950 border-emerald-300' : 'bg-slate-950/80 text-slate-300 border-slate-700'}`}>
+             {message}
+          </div>
+
           {isStableSignal && measurement && (
              <div className="bg-emerald-500 text-slate-950 px-5 py-1 rounded-full font-black text-[10px] tracking-tight shadow-xl animate-in fade-in slide-in-from-top-2 border-2 border-emerald-400">
                 LOCKED: SIZE {measurement.size} (99% ACCURACY)
@@ -597,16 +671,17 @@ function App() {
           </div>
 
           <div className="flex gap-4">
-             <button onClick={() => setCurrentStep('welcome')} className="w-16 h-16 flex items-center justify-center bg-slate-900/80 border border-slate-800 rounded-3xl text-slate-500 hover:text-white transition-all active:scale-90 shadow-xl">
+             <button aria-label="Cancel session" onClick={() => setCurrentStep('welcome')} className="w-16 h-16 flex items-center justify-center bg-slate-900/80 border border-slate-800 rounded-3xl text-slate-500 hover:text-white transition-all active:scale-90 shadow-xl">
                 <X className="w-7 h-7" />
              </button>
              
              <button 
+                  aria-label="Capture measurement"
                   onClick={captureShot}
-                  disabled={!isStableSignal}
-                  className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all shadow-2xl relative overflow-hidden ring-[12px] ${isStableSignal ? 'bg-emerald-500 text-slate-950 ring-emerald-500/20 cursor-pointer active:scale-90 active:bg-emerald-400 hover:bg-emerald-400' : 'bg-slate-800/80 text-slate-600 ring-slate-800/20 cursor-not-allowed opacity-80'}`}
+                  disabled={!isStableSignal || !measurement}
+                  className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all shadow-2xl relative overflow-hidden ring-[12px] ${isStableSignal && measurement ? 'bg-emerald-500 text-slate-950 ring-emerald-500/20 cursor-pointer active:scale-90 active:bg-emerald-400 hover:bg-emerald-400' : 'bg-slate-800/80 text-slate-600 ring-slate-800/20 cursor-not-allowed opacity-80'}`}
                >
-                  <Camera className={`w-9 h-9 scale-110 ${!isStableSignal && 'opacity-50'}`} strokeWidth={3} />
+                  <Camera className={`w-9 h-9 scale-110 ${(!isStableSignal || !measurement) && 'opacity-50'}`} strokeWidth={3} />
                </button>
           </div>
        </div>
