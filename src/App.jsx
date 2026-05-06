@@ -7,6 +7,157 @@ import { getFullSizing, calculateFingerWidthPixels } from './utils/sizing'
 // R-Thumb(4), R-Index(8), R-Mid(12), R-Ring(16), R-Pinky(20)
 const getFingerIndexForShot = (shotNum) => [20, 16, 12, 8, 4, 4, 8, 12, 16, 20][shotNum - 1] || 8;
 
+const LEVEL_TOLERANCE_DEGREES = 8;
+
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+const getObjectCoverTransform = (video, rect) => {
+  const videoWidth = video.videoWidth || rect.width;
+  const videoHeight = video.videoHeight || rect.height;
+  const scale = Math.max(rect.width / videoWidth, rect.height / videoHeight);
+  const renderedWidth = videoWidth * scale;
+  const renderedHeight = videoHeight * scale;
+
+  return {
+    videoWidth,
+    videoHeight,
+    scale,
+    offsetX: (rect.width - renderedWidth) / 2,
+    offsetY: (rect.height - renderedHeight) / 2,
+  };
+};
+
+const videoToViewPoint = (point, transform) => ({
+  x: point.x * transform.scale + transform.offsetX,
+  y: point.y * transform.scale + transform.offsetY,
+});
+
+const viewToVideoPoint = (point, transform) => ({
+  x: (point.x - transform.offsetX) / transform.scale,
+  y: (point.y - transform.offsetY) / transform.scale,
+});
+
+const landmarkToViewPoint = (landmark, transform) => videoToViewPoint({
+  x: landmark.x * transform.videoWidth,
+  y: landmark.y * transform.videoHeight,
+}, transform);
+
+const zoneToRect = (zone, rect) => ({
+  x: zone.x * rect.width,
+  y: zone.y * rect.height,
+  w: zone.w * rect.width,
+  h: zone.h * rect.height,
+});
+
+const isPointInRect = (point, box, padding = 0) => (
+  point.x >= box.x - padding &&
+  point.x <= box.x + box.w + padding &&
+  point.y >= box.y - padding &&
+  point.y <= box.y + box.h + padding
+);
+
+const toViewLandmarks = (hand, transform, rect) => hand.map((landmark) => {
+  const point = landmarkToViewPoint(landmark, transform);
+  return {
+    ...landmark,
+    x: point.x / rect.width,
+    y: point.y / rect.height,
+  };
+});
+
+const findQuarterInFrame = (video, rect, transform, quarterRing) => {
+  const cv = window.cv;
+  if (!cv?.Mat || !video.videoWidth || !video.videoHeight || !rect.width || !rect.height) return null;
+
+  const ringCenter = {
+    x: quarterRing.x * rect.width,
+    y: quarterRing.y * rect.height,
+  };
+  const ringRadius = quarterRing.r * rect.width;
+  const searchRadius = ringRadius * 1.85;
+  const topLeft = viewToVideoPoint({ x: ringCenter.x - searchRadius, y: ringCenter.y - searchRadius }, transform);
+  const bottomRight = viewToVideoPoint({ x: ringCenter.x + searchRadius, y: ringCenter.y + searchRadius }, transform);
+  const left = Math.floor(clamp(Math.min(topLeft.x, bottomRight.x), 0, transform.videoWidth - 1));
+  const top = Math.floor(clamp(Math.min(topLeft.y, bottomRight.y), 0, transform.videoHeight - 1));
+  const right = Math.ceil(clamp(Math.max(topLeft.x, bottomRight.x), 1, transform.videoWidth));
+  const bottom = Math.ceil(clamp(Math.max(topLeft.y, bottomRight.y), 1, transform.videoHeight));
+  const roiWidth = right - left;
+  const roiHeight = bottom - top;
+
+  if (roiWidth < 30 || roiHeight < 30) return null;
+
+  let src = null;
+  let roi = null;
+  let gray = null;
+  let equalized = null;
+  let blurred = null;
+  let circles = null;
+
+  try {
+    src = cv.imread(video);
+    roi = src.roi(new cv.Rect(left, top, roiWidth, roiHeight));
+    gray = new cv.Mat();
+    equalized = new cv.Mat();
+    blurred = new cv.Mat();
+    circles = new cv.Mat();
+
+    cv.cvtColor(roi, gray, cv.COLOR_RGBA2GRAY);
+    if (typeof cv.equalizeHist === 'function') {
+      cv.equalizeHist(gray, equalized);
+    } else {
+      gray.copyTo(equalized);
+    }
+    cv.GaussianBlur(equalized, blurred, new cv.Size(9, 9), 2, 2, cv.BORDER_DEFAULT);
+
+    const expectedRadius = ringRadius / transform.scale;
+    const minRadius = Math.max(8, Math.round(expectedRadius * 0.45));
+    const maxRadius = Math.max(
+      minRadius + 2,
+      Math.min(Math.round(expectedRadius * 1.7), Math.floor(Math.min(roiWidth, roiHeight) / 2))
+    );
+    const minDistance = Math.max(24, Math.round(expectedRadius * 0.9));
+
+    cv.HoughCircles(blurred, circles, cv.HOUGH_GRADIENT, 1.2, minDistance, 70, 18, minRadius, maxRadius);
+
+    let best = null;
+    for (let i = 0; i < circles.cols; i += 1) {
+      const base = i * 3;
+      const centerVideo = {
+        x: left + circles.data32F[base],
+        y: top + circles.data32F[base + 1],
+      };
+      const centerView = videoToViewPoint(centerVideo, transform);
+      const radiusView = circles.data32F[base + 2] * transform.scale;
+      const distance = Math.hypot(centerView.x - ringCenter.x, centerView.y - ringCenter.y);
+      const radiusError = Math.abs(radiusView - ringRadius) / ringRadius;
+      const inGuide = distance <= ringRadius * 1.6;
+      const usableRadius = radiusView >= ringRadius * 0.45 && radiusView <= ringRadius * 1.7;
+
+      if (!inGuide || !usableRadius) continue;
+
+      const score = distance / ringRadius + radiusError;
+      if (!best || score < best.score) {
+        best = {
+          x: centerView.x,
+          y: centerView.y,
+          radius: radiusView,
+          diameter: radiusView * 2,
+          score,
+        };
+      }
+    }
+
+    return best;
+  } finally {
+    src?.delete?.();
+    roi?.delete?.();
+    gray?.delete?.();
+    equalized?.delete?.();
+    blurred?.delete?.();
+    circles?.delete?.();
+  }
+};
+
 function App() {
   // Navigation State
   const [currentStep, setCurrentStep] = useState('welcome')
@@ -24,6 +175,7 @@ function App() {
   const [librariesLoaded, setLibrariesLoaded] = useState(false)
   const [message, setMessage] = useState('System Booting...')
   const [isStableSignal, setIsStableSignal] = useState(false)
+  const [detectionState, setDetectionState] = useState({ quarter: false, finger: false, level: true })
   
   // Results & Temporary Data
   const [results, setResults] = useState({})
@@ -39,9 +191,10 @@ function App() {
   const lastQuarterRef = useRef(0) // V27: Sync Capture Quarter Ref
   const videoDimsRef = useRef({ w: 0, h: 0 }) // V27: Sync Capture Dims Ref
   const orientationRef = useRef({ pitch: 0, roll: 0 })
-  const isLeveledRef = useRef(false)
+  const isLeveledRef = useRef(true)
   const isStableSignalRef = useRef(false)
   const shotNumberRef = useRef(1)
+  const lastDetectionStateRef = useRef({ quarter: false, finger: false, level: true })
 
   useEffect(() => { shotNumberRef.current = shotNumber }, [shotNumber])
   useEffect(() => { isStableSignalRef.current = isStableSignal }, [isStableSignal])
@@ -65,8 +218,10 @@ function App() {
     lastQuarterRef.current = 0
     videoDimsRef.current = { w: 0, h: 0 }
     orientationRef.current = { pitch: 0, roll: 0 }
-    isLeveledRef.current = false
+    isLeveledRef.current = true
     isStableSignalRef.current = false
+    lastDetectionStateRef.current = { quarter: false, finger: false, level: true }
+    setDetectionState(lastDetectionStateRef.current)
   }
 
   // Phase 0: Environment Lockdown (2s)
@@ -178,8 +333,8 @@ function App() {
         const roll = e.gamma || 0; // -90 to 90
         orientationRef.current = { pitch, roll };
         
-        // Parallel-to-Ground Logic (±1.5 Tolerance)
-        const isCurrentlyLeveled = Math.abs(pitch) < 1.5 && Math.abs(roll) < 1.5;
+        // Treat level as a tolerance band, not a hair-trigger lock.
+        const isCurrentlyLeveled = Math.abs(pitch) < LEVEL_TOLERANCE_DEGREES && Math.abs(roll) < LEVEL_TOLERANCE_DEGREES;
         isLeveledRef.current = isCurrentlyLeveled;
      };
 
@@ -338,6 +493,7 @@ function App() {
          const results = handsRef.current.detectForVideo(video, startTimeMs);
          
          videoDimsRef.current = { w: video.videoWidth, h: video.videoHeight };
+         const transform = getObjectCoverTransform(video, rect);
          
          // V28: CLOSE SURGICAL STACK (Quarter Center-Top, Nail Center-Bottom) - CLOSE SPACING
          const quarterRing = { x: 0.5, y: 0.35, r: 0.12 }; 
@@ -401,95 +557,99 @@ function App() {
 
          drawSurgicalHUD();
 
-         if (results.landmarks && results.landmarks[0]) {
-            const hand = results.landmarks[0];
-            
-            // V30 Fix: Move landmark assignment out of volatile CV block!
-            lastHandRef.current = hand;
+         let quarter = null;
+         try {
+            quarter = findQuarterInFrame(video, rect, transform, quarterRing);
+         } catch (cvErr) {
+            console.warn("CV Frame Error:", cvErr);
+         }
 
-            // OpenCV Quarter Logic
-            let src = null;
-            let gray = null;
-            let circles = null;
-            try {
-               const cv = window.cv;
-               if (!cv?.Mat) throw new Error('OpenCV unavailable');
+         const hand = results.landmarks?.[0] || null;
+         const viewHand = hand ? toViewLandmarks(hand, transform, rect) : null;
+         const fingerIndex = getFingerIndexForShot(shotNumberRef.current);
+         const activeTip = viewHand?.[fingerIndex]
+            ? { x: viewHand[fingerIndex].x * rect.width, y: viewHand[fingerIndex].y * rect.height }
+            : null;
+         const nailBox = zoneToRect(nBox, rect);
+         const fingerDetected = Boolean(activeTip && isPointInRect(activeTip, nailBox, 24));
+         const quarterDetected = Boolean(quarter?.diameter);
+         const levelDetected = isLeveledRef.current;
+         const nextDetectionState = { quarter: quarterDetected, finger: fingerDetected, level: levelDetected };
+         const previousDetectionState = lastDetectionStateRef.current;
 
-               src = cv.imread(video);
-               gray = new cv.Mat();
-               cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-               circles = new cv.Mat();
-               cv.HoughCircles(gray, circles, cv.HOUGH_GRADIENT, 1.2, 45, 50, 22, 25, 200); 
-               
-               let quarterPixels = 0;
+         if (
+            previousDetectionState.quarter !== nextDetectionState.quarter ||
+            previousDetectionState.finger !== nextDetectionState.finger ||
+            previousDetectionState.level !== nextDetectionState.level
+         ) {
+            lastDetectionStateRef.current = nextDetectionState;
+            setDetectionState(nextDetectionState);
+         }
 
-               if (circles.cols > 0) {
-                  const cx = circles.data32F[0] / video.videoWidth;
-                  const cy = circles.data32F[1] / video.videoHeight;
-                  
-                  // Check if quarter is in HUD ring (sweet spot center)
-                  // V24: RELAXED ZONE CHECK (50% Allowance)
-                  const dist = Math.sqrt(Math.pow(cx - quarterRing.x, 2) + Math.pow(cy - quarterRing.y, 2));
-                  if (dist < quarterRing.r * 1.5) {
-                     quarterPixels = circles.data32F[2] * 2;
-                     // DIMENSIONS MAPPING (Visual Feedback)
-                     ctx.setLineDash([]);
-                     ctx.beginPath(); ctx.arc(circles.data32F[0]/ratio, circles.data32F[1]/ratio, circles.data32F[2]/ratio, 0, 2 * Math.PI);
-                     ctx.strokeStyle = '#10b981'; ctx.lineWidth = 4; ctx.stroke();
-                  }
-               }
+         lastQuarterRef.current = quarter?.diameter || 0;
+         lastHandRef.current = viewHand;
 
-                // V27: Update Snapshot Refs
-                lastQuarterRef.current = quarterPixels;
+         if (quarter) {
+            ctx.save();
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.arc(quarter.x, quarter.y, quarter.radius, 0, 2 * Math.PI);
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 4;
+            ctx.shadowBlur = 16;
+            ctx.shadowColor = 'rgba(16, 185, 129, 0.7)';
+            ctx.stroke();
+            ctx.restore();
+         }
 
-                 // V28: SHUTTER LOCK LOGIC (Leveled + Quarter Found)
-                 const quarterDetected = quarterPixels > 0;
-                 if (isLeveledRef.current && quarterDetected) {
-                    setIsStableSignal(true);
-                    setMessage("TARGET LOCKED (READY)");
-                    
-                    // V29: Get finger index for current shot
-                    const fingerIndex = getFingerIndexForShot(shotNumberRef.current); 
-                    const fingerPx = calculateFingerWidthPixels(hand, fingerIndex, rect.width, rect.height);
-                    
-                    const sizing = getFullSizing(fingerPx, quarterPixels, hand, rect.width, rect.height);
-                    setMeasurement(prev => (
-                       prev?.mm === sizing.mm && prev?.size === sizing.size
-                          ? prev
-                          : { mm: sizing.mm, size: sizing.size }
-                    ));
-                 } else if (!isLeveledRef.current) {
-                    setIsStableSignal(false);
-                    setMessage("Tilt phone until level");
-                    setMeasurement(null);
-                 } else {
-                    setIsStableSignal(false);
-                    setMessage("Quarter not found");
-                    setMeasurement(null);
-                 }
+         if (viewHand) {
+            viewHand.forEach((lm, index) => {
+               const x = lm.x * rect.width;
+               const y = lm.y * rect.height;
+               const isActiveFinger = index === fingerIndex || index === fingerIndex - 1;
+               if (!isActiveFinger && !isStableSignalRef.current) return;
 
-            } catch (cvErr) {
-               console.warn("CV Frame Error:", cvErr);
-               
-               // V30: If CV fails, we unready the shutter to prevent 18mm false positives
-               setIsStableSignal(false);
-               setMessage("Analyzing Environment...");
-               setMeasurement(null);
-            } finally {
-               src?.delete?.();
-               gray?.delete?.();
-               circles?.delete?.();
-            }
-
-            // V15: LANDMARK PURGE (Professional Clean UI)
-            hand.forEach(lm => {
-               ctx.beginPath(); ctx.arc(lm.x * rect.width, lm.y * rect.height, 2, 0, 2 * Math.PI);
-               ctx.fillStyle = isStableSignalRef.current ? 'rgba(16, 185, 129, 0.4)' : 'transparent'; ctx.fill();
+               ctx.beginPath();
+               ctx.arc(x, y, isActiveFinger ? 4 : 2, 0, 2 * Math.PI);
+               ctx.fillStyle = fingerDetected ? 'rgba(16, 185, 129, 0.75)' : 'rgba(255,255,255,0.45)';
+               ctx.fill();
             });
-         } else {
+         }
+
+         if (!quarterDetected) {
             setIsStableSignal(false);
-            setMessage("Focus on nail target box");
+            setMessage("Move quarter into top circle");
             setMeasurement(null);
+         } else if (!viewHand) {
+            setIsStableSignal(false);
+            setMessage(`Place ${steps[shotNumberRef.current - 1]} in lower target`);
+            setMeasurement(null);
+         } else if (!fingerDetected) {
+            setIsStableSignal(false);
+            setMessage(`Move ${steps[shotNumberRef.current - 1]} into lower box`);
+            setMeasurement(null);
+         } else if (!levelDetected) {
+            setIsStableSignal(false);
+            setMessage("Hold phone level");
+            setMeasurement(null);
+         } else {
+            const fingerPx = calculateFingerWidthPixels(viewHand, fingerIndex, rect.width, rect.height);
+            const sizing = getFullSizing(fingerPx, quarter.diameter, viewHand, rect.width, rect.height);
+            const hasSizing = sizing.size !== 'N/A' && Number.parseFloat(sizing.mm) > 0;
+
+            if (hasSizing) {
+               setIsStableSignal(true);
+               setMessage(`TARGET LOCKED: SIZE ${sizing.size}`);
+               setMeasurement(prev => (
+                  prev?.mm === sizing.mm && prev?.size === sizing.size
+                     ? prev
+                     : { mm: sizing.mm, size: sizing.size }
+               ));
+            } else {
+               setIsStableSignal(false);
+               setMessage("Refine finger position");
+               setMeasurement(null);
+            }
          }
       } catch (err) { /* Frame drop silent */ }
 
@@ -517,7 +677,19 @@ function App() {
     setResults(prev => ({ ...prev, [fingerName]: measurement }));
     
     if (shotNumber < 10) {
-      setShotNumber(prev => prev + 1);
+      const nextShotNumber = shotNumber + 1;
+      const resetDetection = { quarter: false, finger: false, level: isLeveledRef.current };
+
+      setShotNumber(nextShotNumber);
+      shotNumberRef.current = nextShotNumber;
+      setIsStableSignal(false);
+      isStableSignalRef.current = false;
+      setMeasurement(null);
+      setMessage(`Place ${steps[nextShotNumber - 1]} in lower target`);
+      lastHandRef.current = null;
+      lastQuarterRef.current = 0;
+      lastDetectionStateRef.current = resetDetection;
+      setDetectionState(resetDetection);
     } else {
       setTimeout(() => setCurrentStep('finish'), 200);
     }
@@ -625,6 +797,21 @@ function App() {
        <div className="absolute top-12 inset-x-0 flex flex-col items-center gap-3 z-30 pointer-events-none">
           <div className={`px-4 py-1.5 rounded-full border text-[10px] font-black tracking-widest uppercase shadow-xl ${isStableSignal ? 'bg-emerald-500/90 text-slate-950 border-emerald-300' : 'bg-slate-950/80 text-slate-300 border-slate-700'}`}>
              {message}
+          </div>
+
+          <div className="flex gap-2">
+             {[
+                ['quarter', 'QTR'],
+                ['finger', 'FINGER'],
+                ['level', 'LEVEL'],
+             ].map(([key, label]) => (
+                <span
+                   key={key}
+                   className={`px-2 py-1 rounded-full border text-[8px] font-black tracking-widest ${detectionState[key] ? 'bg-emerald-500/90 text-slate-950 border-emerald-300' : 'bg-slate-950/70 text-slate-500 border-slate-800'}`}
+                >
+                   {label}
+                </span>
+             ))}
           </div>
 
           {isStableSignal && measurement && (
