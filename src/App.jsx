@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Camera, ShieldAlert, Scan, X, CheckCircle2, ChevronRight } from 'lucide-react'
-import { getFullSizing, calculateFingerWidthPixels } from './utils/sizing'
+import { getFullSizing, calculateFingerWidthPixels, calculateMM, mmToNailSize } from './utils/sizing'
 
 // V30: Explicit 10-Finger Sequence Mapping
 // L-Pinky(20), L-Ring(16), L-Mid(12), L-Index(8), L-Thumb(4)
@@ -8,6 +8,8 @@ import { getFullSizing, calculateFingerWidthPixels } from './utils/sizing'
 const getFingerIndexForShot = (shotNum) => [20, 16, 12, 8, 4, 4, 8, 12, 16, 20][shotNum - 1] || 8;
 
 const LEVEL_TOLERANCE_DEGREES = 8;
+const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.12 };
+const DEFAULT_NAIL_BOX = { x: 0.32, y: 0.48, w: 0.36, h: 0.35 };
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -158,6 +160,38 @@ const findQuarterInFrame = (video, rect, transform, quarterRing) => {
   }
 };
 
+const getDefaultAssistGuide = (width, height) => ({
+  quarter: {
+    x: DEFAULT_QUARTER_RING.x * width,
+    y: DEFAULT_QUARTER_RING.y * height,
+    r: DEFAULT_QUARTER_RING.r * width,
+  },
+  nail: {
+    left: { x: (DEFAULT_NAIL_BOX.x + DEFAULT_NAIL_BOX.w * 0.34) * width, y: (DEFAULT_NAIL_BOX.y + DEFAULT_NAIL_BOX.h * 0.55) * height },
+    right: { x: (DEFAULT_NAIL_BOX.x + DEFAULT_NAIL_BOX.w * 0.66) * width, y: (DEFAULT_NAIL_BOX.y + DEFAULT_NAIL_BOX.h * 0.55) * height },
+  },
+});
+
+const getAssistMeasurement = (frame) => {
+  if (!frame?.guide) return null;
+
+  const { quarter, nail } = frame.guide;
+  const quarterPixels = quarter.r * 2;
+  const nailPixels = Math.hypot(nail.right.x - nail.left.x, nail.right.y - nail.left.y);
+  const mm = calculateMM(nailPixels, quarterPixels);
+  const size = mmToNailSize(mm);
+
+  if (!Number.isFinite(mm) || mm <= 0 || size === 'N/A') return null;
+
+  return {
+    mm: mm.toFixed(2),
+    size,
+    method: 'assist',
+    quarterPixels,
+    nailPixels,
+  };
+};
+
 function App() {
   // Navigation State
   const [currentStep, setCurrentStep] = useState('welcome')
@@ -181,10 +215,13 @@ function App() {
   const [results, setResults] = useState({})
   const [measurement, setMeasurement] = useState(null)
   const [shutterFlash, setShutterFlash] = useState(false)
+  const [assistFrame, setAssistFrame] = useState(null)
+  const [dragHandle, setDragHandle] = useState(null)
   
   // Refs
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
+  const assistSurfaceRef = useRef(null)
   const handsRef = useRef(null)
   const frameIdRef = useRef(null)
   const lastHandRef = useRef(null) // V27: Sync Capture Hand Ref
@@ -212,6 +249,8 @@ function App() {
     setIsVisionCrashed(false)
     setIsStableSignal(false)
     setMeasurement(null)
+    setAssistFrame(null)
+    setDragHandle(null)
     setResults({})
     setMessage('Activating Hardware...')
     lastHandRef.current = null
@@ -496,8 +535,8 @@ function App() {
          const transform = getObjectCoverTransform(video, rect);
          
          // V28: CLOSE SURGICAL STACK (Quarter Center-Top, Nail Center-Bottom) - CLOSE SPACING
-         const quarterRing = { x: 0.5, y: 0.35, r: 0.12 }; 
-         const nBox = { x: 0.32, y: 0.48, w: 0.36, h: 0.35 }; 
+         const quarterRing = DEFAULT_QUARTER_RING; 
+         const nBox = DEFAULT_NAIL_BOX; 
 
          const drawSurgicalHUD = () => {
             const w = rect.width;
@@ -662,19 +701,13 @@ function App() {
     return () => cancelAnimationFrame(frameIdRef.current);
   }, [isVisionReady, currentStep]);
 
-  // Phase 4: Capture & Sequence (Surgical Refactor)
-   const captureShot = () => {
-    if (!isStableSignal || !measurement) {
-      setMessage('Wait for target lock before capture');
-      return;
-    }
-
+  const advanceSequence = (nextMeasurement) => {
     if (navigator.vibrate) { try { navigator.vibrate(15); } catch(e){} }
     setShutterFlash(true);
     setTimeout(() => setShutterFlash(false), 80);
 
     const fingerName = steps[shotNumber-1];
-    setResults(prev => ({ ...prev, [fingerName]: measurement }));
+    setResults(prev => ({ ...prev, [fingerName]: nextMeasurement }));
     
     if (shotNumber < 10) {
       const nextShotNumber = shotNumber + 1;
@@ -690,12 +723,231 @@ function App() {
       lastQuarterRef.current = 0;
       lastDetectionStateRef.current = resetDetection;
       setDetectionState(resetDetection);
+      setCurrentStep('wizard');
     } else {
       setTimeout(() => setCurrentStep('finish'), 200);
     }
   }
 
+  const captureShot = () => {
+    if (!isStableSignal || !measurement) {
+      setMessage('Wait for target lock before capture');
+      return;
+    }
+
+    advanceSequence(measurement);
+  }
+
+  const startAssistMeasurement = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) {
+      setMessage('Camera frame not ready');
+      return;
+    }
+
+    const rect = video.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width || video.videoWidth));
+    const height = Math.max(1, Math.round(rect.height || video.videoHeight));
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      setMessage('Frame capture unavailable');
+      return;
+    }
+
+    canvas.width = width;
+    canvas.height = height;
+    const transform = getObjectCoverTransform(video, { width, height });
+    ctx.drawImage(
+      video,
+      transform.offsetX,
+      transform.offsetY,
+      transform.videoWidth * transform.scale,
+      transform.videoHeight * transform.scale
+    );
+
+    setAssistFrame({
+      image: canvas.toDataURL('image/jpeg', 0.92),
+      width,
+      height,
+      guide: getDefaultAssistGuide(width, height),
+    });
+    setDragHandle(null);
+    setIsStableSignal(false);
+    setMeasurement(null);
+    setCurrentStep('assist');
+  }
+
+  const getAssistPoint = (event) => {
+    if (!assistFrame || !assistSurfaceRef.current) return null;
+    const rect = assistSurfaceRef.current.getBoundingClientRect();
+    return {
+      x: clamp((event.clientX - rect.left) * assistFrame.width / rect.width, 0, assistFrame.width),
+      y: clamp((event.clientY - rect.top) * assistFrame.height / rect.height, 0, assistFrame.height),
+    };
+  }
+
+  const moveAssistHandle = (handle, event) => {
+    const point = getAssistPoint(event);
+    if (!point) return;
+
+    setAssistFrame(prev => {
+      if (!prev) return prev;
+      const guide = {
+        quarter: { ...prev.guide.quarter },
+        nail: {
+          left: { ...prev.guide.nail.left },
+          right: { ...prev.guide.nail.right },
+        },
+      };
+
+      if (handle === 'quarter') {
+        guide.quarter.x = point.x;
+        guide.quarter.y = point.y;
+      } else if (handle === 'quarterRadius') {
+        const radius = Math.hypot(point.x - guide.quarter.x, point.y - guide.quarter.y);
+        guide.quarter.r = clamp(radius, prev.width * 0.04, prev.width * 0.32);
+      } else if (handle === 'nailLeft') {
+        guide.nail.left = point;
+      } else if (handle === 'nailRight') {
+        guide.nail.right = point;
+      }
+
+      return { ...prev, guide };
+    });
+  }
+
+  const startAssistDrag = (handle, event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragHandle(handle);
+    moveAssistHandle(handle, event);
+  }
+
+  const resetAssistGuide = () => {
+    setAssistFrame(prev => prev ? { ...prev, guide: getDefaultAssistGuide(prev.width, prev.height) } : prev);
+    setDragHandle(null);
+  }
+
+  const applyAssistMeasurement = () => {
+    const nextMeasurement = getAssistMeasurement(assistFrame);
+    if (!nextMeasurement) {
+      setMessage('Align quarter and nail guides');
+      return;
+    }
+
+    setAssistFrame(null);
+    setDragHandle(null);
+    advanceSequence(nextMeasurement);
+  }
+
   // UI VIEWS
+  if (currentStep === 'assist' && assistFrame) {
+    const assistMeasurement = getAssistMeasurement(assistFrame);
+    const { quarter, nail } = assistFrame.guide;
+    const radiusHandle = { x: quarter.x + quarter.r, y: quarter.y };
+
+    return (
+      <div className="fixed inset-0 bg-slate-950 flex flex-col font-sans overflow-hidden select-none">
+         {shutterFlash && <div className="absolute inset-0 bg-white z-[100] animate-out fade-out duration-150" />}
+
+         <div className="px-5 pt-10 pb-4 border-b border-slate-900/80 flex items-center justify-between gap-4">
+            <div className="min-w-0">
+               <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">ASSIST {shotNumber}/10</span>
+               <h3 className="text-xl font-black text-white tracking-widest leading-none uppercase italic truncate">{steps[shotNumber-1]}</h3>
+            </div>
+            <div className="text-right shrink-0">
+               <div className="text-[10px] text-slate-500 font-black tracking-widest uppercase">SIZE</div>
+               <div className="text-3xl font-black text-emerald-400 leading-none">#{assistMeasurement?.size || '-'}</div>
+               <div className="text-[10px] text-slate-400 font-black">{assistMeasurement?.mm || '0.00'}mm</div>
+            </div>
+         </div>
+
+         <div className="flex-1 min-h-0 p-3 flex items-center justify-center bg-black">
+            <div
+               ref={assistSurfaceRef}
+               className="relative max-w-3xl overflow-hidden border border-slate-800 bg-black touch-none"
+               style={{
+                  aspectRatio: `${assistFrame.width} / ${assistFrame.height}`,
+                  width: `min(100%, calc(72vh * ${assistFrame.width / assistFrame.height}))`,
+               }}
+               onPointerMove={(event) => dragHandle && moveAssistHandle(dragHandle, event)}
+               onPointerUp={() => setDragHandle(null)}
+               onPointerCancel={() => setDragHandle(null)}
+            >
+               <img src={assistFrame.image} alt="" className="absolute inset-0 w-full h-full object-cover" draggable="false" />
+               <svg
+                  className="absolute inset-0 w-full h-full"
+                  viewBox={`0 0 ${assistFrame.width} ${assistFrame.height}`}
+                  preserveAspectRatio="none"
+               >
+                  <defs>
+                     <filter id="assistGlow">
+                        <feGaussianBlur stdDeviation="3" result="blur" />
+                        <feMerge>
+                           <feMergeNode in="blur" />
+                           <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                     </filter>
+                  </defs>
+
+                  <circle cx={quarter.x} cy={quarter.y} r={quarter.r} fill="rgba(16,185,129,0.08)" stroke="#10b981" strokeWidth="4" strokeDasharray="12 10" filter="url(#assistGlow)" />
+                  <line x1={quarter.x - quarter.r} y1={quarter.y} x2={quarter.x + quarter.r} y2={quarter.y} stroke="#10b981" strokeWidth="3" />
+                  <line x1={quarter.x} y1={quarter.y - quarter.r} x2={quarter.x} y2={quarter.y + quarter.r} stroke="#10b981" strokeWidth="3" />
+
+                  <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#f8fafc" strokeWidth="8" strokeLinecap="round" filter="url(#assistGlow)" />
+                  <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#10b981" strokeWidth="4" strokeLinecap="round" />
+
+                  {[
+                     ['quarter', quarter.x, quarter.y, '#10b981'],
+                     ['quarterRadius', radiusHandle.x, radiusHandle.y, '#22d3ee'],
+                     ['nailLeft', nail.left.x, nail.left.y, '#f8fafc'],
+                     ['nailRight', nail.right.x, nail.right.y, '#f8fafc'],
+                  ].map(([handle, x, y, color]) => (
+                     <g key={handle} onPointerDown={(event) => startAssistDrag(handle, event)} style={{ cursor: 'grab' }}>
+                        <circle cx={x} cy={y} r="24" fill="rgba(15,23,42,0.82)" stroke={color} strokeWidth="5" />
+                        <circle cx={x} cy={y} r="7" fill={color} />
+                     </g>
+                  ))}
+               </svg>
+            </div>
+         </div>
+
+         <div className="p-5 bg-slate-950 border-t border-slate-900/80 flex items-center gap-3">
+            <button
+               aria-label="Cancel assisted measurement"
+               onClick={() => {
+                  setAssistFrame(null);
+                  setDragHandle(null);
+                  setCurrentStep('wizard');
+                  setMessage(`Place ${steps[shotNumberRef.current - 1]} in lower target`);
+               }}
+               className="w-14 h-14 flex items-center justify-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 active:scale-95"
+            >
+               <X className="w-6 h-6" />
+            </button>
+
+            <button
+               aria-label="Reset assisted guides"
+               onClick={resetAssistGuide}
+               className="w-14 h-14 flex items-center justify-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 active:scale-95"
+            >
+               <Scan className="w-6 h-6" />
+            </button>
+
+            <button
+               aria-label="Use assisted measurement"
+               onClick={applyAssistMeasurement}
+               disabled={!assistMeasurement}
+               className={`flex-1 h-16 rounded-2xl font-black tracking-widest text-xs uppercase flex items-center justify-center gap-2 active:scale-95 ${assistMeasurement ? 'bg-emerald-500 text-slate-950 shadow-xl shadow-emerald-500/20' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+            >
+               <CheckCircle2 className="w-5 h-5" /> USE MEASUREMENT
+            </button>
+         </div>
+      </div>
+    )
+  }
+
   if (currentStep === 'finish') return (
     <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center overflow-y-auto">
        <div className="absolute top-0 inset-x-0 h-64 bg-emerald-500/5 blur-3xl opacity-50" />
@@ -861,6 +1113,15 @@ function App() {
              <button aria-label="Cancel session" onClick={() => setCurrentStep('welcome')} className="w-16 h-16 flex items-center justify-center bg-slate-900/80 border border-slate-800 rounded-3xl text-slate-500 hover:text-white transition-all active:scale-90 shadow-xl">
                 <X className="w-7 h-7" />
              </button>
+
+             <button
+                  aria-label="Freeze frame for assisted measurement"
+                  onClick={startAssistMeasurement}
+                  disabled={!isCameraReady}
+                  className={`w-16 h-16 flex items-center justify-center rounded-3xl border transition-all active:scale-90 shadow-xl ${isCameraReady ? 'bg-slate-900/90 border-emerald-500/40 text-emerald-400 hover:text-emerald-300' : 'bg-slate-900/60 border-slate-800 text-slate-700 cursor-not-allowed'}`}
+               >
+                  <Scan className="w-7 h-7" />
+               </button>
              
              <button 
                   aria-label="Capture measurement"
