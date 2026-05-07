@@ -702,6 +702,9 @@ function App() {
   }, [isVisionReady, currentStep]);
 
   const advanceSequence = (nextMeasurement) => {
+    setAssistFrame(null);
+    setDragHandle(null);
+
     if (navigator.vibrate) { try { navigator.vibrate(15); } catch(e){} }
     setShutterFlash(true);
     setTimeout(() => setShutterFlash(false), 80);
@@ -775,7 +778,7 @@ function App() {
     setDragHandle(null);
     setIsStableSignal(false);
     setMeasurement(null);
-    setCurrentStep('assist');
+    setMessage('Adjust quarter and nail guides');
   }
 
   const getAssistPoint = (event) => {
@@ -842,111 +845,18 @@ function App() {
   }
 
   // UI VIEWS
-  if (currentStep === 'assist' && assistFrame) {
-    const assistMeasurement = getAssistMeasurement(assistFrame);
-    const { quarter, nail } = assistFrame.guide;
-    const radiusHandle = { x: quarter.x + quarter.r, y: quarter.y };
-
-    return (
-      <div className="fixed inset-0 bg-slate-950 flex flex-col font-sans overflow-hidden select-none">
-         {shutterFlash && <div className="absolute inset-0 bg-white z-[100] animate-out fade-out duration-150" />}
-
-         <div className="px-5 pt-10 pb-4 border-b border-slate-900/80 flex items-center justify-between gap-4">
-            <div className="min-w-0">
-               <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">ASSIST {shotNumber}/10</span>
-               <h3 className="text-xl font-black text-white tracking-widest leading-none uppercase italic truncate">{steps[shotNumber-1]}</h3>
-            </div>
-            <div className="text-right shrink-0">
-               <div className="text-[10px] text-slate-500 font-black tracking-widest uppercase">SIZE</div>
-               <div className="text-3xl font-black text-emerald-400 leading-none">#{assistMeasurement?.size || '-'}</div>
-               <div className="text-[10px] text-slate-400 font-black">{assistMeasurement?.mm || '0.00'}mm</div>
-            </div>
-         </div>
-
-         <div className="flex-1 min-h-0 p-3 flex items-center justify-center bg-black">
-            <div
-               ref={assistSurfaceRef}
-               className="relative max-w-3xl overflow-hidden border border-slate-800 bg-black touch-none"
-               style={{
-                  aspectRatio: `${assistFrame.width} / ${assistFrame.height}`,
-                  width: `min(100%, calc(72vh * ${assistFrame.width / assistFrame.height}))`,
-               }}
-               onPointerMove={(event) => dragHandle && moveAssistHandle(dragHandle, event)}
-               onPointerUp={() => setDragHandle(null)}
-               onPointerCancel={() => setDragHandle(null)}
-            >
-               <img src={assistFrame.image} alt="" className="absolute inset-0 w-full h-full object-cover" draggable="false" />
-               <svg
-                  className="absolute inset-0 w-full h-full"
-                  viewBox={`0 0 ${assistFrame.width} ${assistFrame.height}`}
-                  preserveAspectRatio="none"
-               >
-                  <defs>
-                     <filter id="assistGlow">
-                        <feGaussianBlur stdDeviation="3" result="blur" />
-                        <feMerge>
-                           <feMergeNode in="blur" />
-                           <feMergeNode in="SourceGraphic" />
-                        </feMerge>
-                     </filter>
-                  </defs>
-
-                  <circle cx={quarter.x} cy={quarter.y} r={quarter.r} fill="rgba(16,185,129,0.08)" stroke="#10b981" strokeWidth="4" strokeDasharray="12 10" filter="url(#assistGlow)" />
-                  <line x1={quarter.x - quarter.r} y1={quarter.y} x2={quarter.x + quarter.r} y2={quarter.y} stroke="#10b981" strokeWidth="3" />
-                  <line x1={quarter.x} y1={quarter.y - quarter.r} x2={quarter.x} y2={quarter.y + quarter.r} stroke="#10b981" strokeWidth="3" />
-
-                  <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#f8fafc" strokeWidth="8" strokeLinecap="round" filter="url(#assistGlow)" />
-                  <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#10b981" strokeWidth="4" strokeLinecap="round" />
-
-                  {[
-                     ['quarter', quarter.x, quarter.y, '#10b981'],
-                     ['quarterRadius', radiusHandle.x, radiusHandle.y, '#22d3ee'],
-                     ['nailLeft', nail.left.x, nail.left.y, '#f8fafc'],
-                     ['nailRight', nail.right.x, nail.right.y, '#f8fafc'],
-                  ].map(([handle, x, y, color]) => (
-                     <g key={handle} onPointerDown={(event) => startAssistDrag(handle, event)} style={{ cursor: 'grab' }}>
-                        <circle cx={x} cy={y} r="24" fill="rgba(15,23,42,0.82)" stroke={color} strokeWidth="5" />
-                        <circle cx={x} cy={y} r="7" fill={color} />
-                     </g>
-                  ))}
-               </svg>
-            </div>
-         </div>
-
-         <div className="p-5 bg-slate-950 border-t border-slate-900/80 flex items-center gap-3">
-            <button
-               aria-label="Cancel assisted measurement"
-               onClick={() => {
-                  setAssistFrame(null);
-                  setDragHandle(null);
-                  setCurrentStep('wizard');
-                  setMessage(`Place ${steps[shotNumberRef.current - 1]} in lower target`);
-               }}
-               className="w-14 h-14 flex items-center justify-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 active:scale-95"
-            >
-               <X className="w-6 h-6" />
-            </button>
-
-            <button
-               aria-label="Reset assisted guides"
-               onClick={resetAssistGuide}
-               className="w-14 h-14 flex items-center justify-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 active:scale-95"
-            >
-               <Scan className="w-6 h-6" />
-            </button>
-
-            <button
-               aria-label="Use assisted measurement"
-               onClick={applyAssistMeasurement}
-               disabled={!assistMeasurement}
-               className={`flex-1 h-16 rounded-2xl font-black tracking-widest text-xs uppercase flex items-center justify-center gap-2 active:scale-95 ${assistMeasurement ? 'bg-emerald-500 text-slate-950 shadow-xl shadow-emerald-500/20' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
-            >
-               <CheckCircle2 className="w-5 h-5" /> USE MEASUREMENT
-            </button>
-         </div>
-      </div>
-    )
-  }
+  const assistMeasurement = getAssistMeasurement(assistFrame);
+  const assistGuide = assistFrame?.guide || null;
+  const quarter = assistGuide?.quarter || null;
+  const nail = assistGuide?.nail || null;
+  const radiusHandle = quarter ? { x: quarter.x + quarter.r, y: quarter.y } : null;
+  const renderAssistHandle = (handle, x, y, color) => (
+     <g key={handle} onPointerDown={(event) => startAssistDrag(handle, event)} style={{ cursor: 'grab' }}>
+        <circle cx={x} cy={y} r="30" fill="transparent" stroke="transparent" strokeWidth="1" />
+        <circle cx={x} cy={y} r="9" fill="rgba(15,23,42,0.92)" stroke={color} strokeWidth="3" />
+        <circle cx={x} cy={y} r="3" fill={color} />
+     </g>
+  );
 
   if (currentStep === 'finish') return (
     <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center overflow-y-auto">
@@ -1044,6 +954,98 @@ function App() {
     <div className="fixed inset-0 bg-black flex flex-col font-sans overflow-hidden select-none">
        {/* SHUTTER FLASH LAYER */}
        {shutterFlash && <div className="absolute inset-0 bg-white z-[100] animate-out fade-out duration-150" />}
+
+       {assistFrame && quarter && nail && radiusHandle && (
+          <div className="absolute inset-0 z-[90] bg-slate-950 flex flex-col font-sans overflow-hidden">
+             <div className="px-5 pt-10 pb-4 border-b border-slate-900/80 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                   <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">ASSIST {shotNumber}/10</span>
+                   <h3 className="text-xl font-black text-white tracking-widest leading-none uppercase italic truncate">{steps[shotNumber-1]}</h3>
+                </div>
+                <div className="text-right shrink-0">
+                   <div className="text-[10px] text-slate-500 font-black tracking-widest uppercase">SIZE</div>
+                   <div className="text-3xl font-black text-emerald-400 leading-none">#{assistMeasurement?.size || '-'}</div>
+                   <div className="text-[10px] text-slate-400 font-black">{assistMeasurement?.mm || '0.00'}mm</div>
+                </div>
+             </div>
+
+             <div className="flex-1 min-h-0 p-3 flex items-center justify-center bg-black">
+                <div
+                   ref={assistSurfaceRef}
+                   className="relative max-w-3xl overflow-hidden border border-slate-800 bg-black touch-none"
+                   style={{
+                      aspectRatio: `${assistFrame.width} / ${assistFrame.height}`,
+                      width: `min(100%, calc(72vh * ${assistFrame.width / assistFrame.height}))`,
+                   }}
+                   onPointerMove={(event) => dragHandle && moveAssistHandle(dragHandle, event)}
+                   onPointerUp={() => setDragHandle(null)}
+                   onPointerCancel={() => setDragHandle(null)}
+                >
+                   <img src={assistFrame.image} alt="" className="absolute inset-0 w-full h-full object-cover" draggable="false" />
+                   <svg
+                      className="absolute inset-0 w-full h-full"
+                      viewBox={`0 0 ${assistFrame.width} ${assistFrame.height}`}
+                      preserveAspectRatio="none"
+                   >
+                      <defs>
+                         <filter id="assistGlow">
+                            <feGaussianBlur stdDeviation="3" result="blur" />
+                            <feMerge>
+                               <feMergeNode in="blur" />
+                               <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                         </filter>
+                      </defs>
+
+                      <circle cx={quarter.x} cy={quarter.y} r={quarter.r} fill="rgba(16,185,129,0.06)" stroke="#10b981" strokeWidth="2.5" strokeDasharray="12 10" filter="url(#assistGlow)" />
+                      <line x1={quarter.x - 10} y1={quarter.y} x2={quarter.x + 10} y2={quarter.y} stroke="#10b981" strokeWidth="2" />
+                      <line x1={quarter.x} y1={quarter.y - 10} x2={quarter.x} y2={quarter.y + 10} stroke="#10b981" strokeWidth="2" />
+
+                      <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#f8fafc" strokeWidth="5" strokeLinecap="round" opacity="0.25" filter="url(#assistGlow)" />
+                      <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#10b981" strokeWidth="2.25" strokeLinecap="round" strokeDasharray="7 6" />
+                      <line x1={nail.left.x} y1={nail.left.y - 24} x2={nail.left.x} y2={nail.left.y + 24} stroke="#f8fafc" strokeWidth="2.5" strokeLinecap="round" />
+                      <line x1={nail.right.x} y1={nail.right.y - 24} x2={nail.right.x} y2={nail.right.y + 24} stroke="#f8fafc" strokeWidth="2.5" strokeLinecap="round" />
+
+                      {renderAssistHandle('quarter', quarter.x, quarter.y, '#10b981')}
+                      {renderAssistHandle('quarterRadius', radiusHandle.x, radiusHandle.y, '#22d3ee')}
+                      {renderAssistHandle('nailLeft', nail.left.x, nail.left.y, '#f8fafc')}
+                      {renderAssistHandle('nailRight', nail.right.x, nail.right.y, '#f8fafc')}
+                   </svg>
+                </div>
+             </div>
+
+             <div className="p-5 bg-slate-950 border-t border-slate-900/80 flex items-center gap-3">
+                <button
+                   aria-label="Cancel assisted measurement"
+                   onClick={() => {
+                      setAssistFrame(null);
+                      setDragHandle(null);
+                      setMessage(`Place ${steps[shotNumberRef.current - 1]} in lower target`);
+                   }}
+                   className="w-14 h-14 flex items-center justify-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 active:scale-95"
+                >
+                   <X className="w-6 h-6" />
+                </button>
+
+                <button
+                   aria-label="Reset assisted guides"
+                   onClick={resetAssistGuide}
+                   className="w-14 h-14 flex items-center justify-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 active:scale-95"
+                >
+                   <Scan className="w-6 h-6" />
+                </button>
+
+                <button
+                   aria-label="Use assisted measurement"
+                   onClick={applyAssistMeasurement}
+                   disabled={!assistMeasurement}
+                   className={`flex-1 h-16 rounded-2xl font-black tracking-widest text-xs uppercase flex items-center justify-center gap-2 active:scale-95 ${assistMeasurement ? 'bg-emerald-500 text-slate-950 shadow-xl shadow-emerald-500/20' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+                >
+                   <CheckCircle2 className="w-5 h-5" /> USE MEASUREMENT
+                </button>
+             </div>
+          </div>
+       )}
 
        {/* HUD TOP: AI STATUS */}
        <div className="absolute top-12 inset-x-0 flex flex-col items-center gap-3 z-30 pointer-events-none">
