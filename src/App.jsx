@@ -1125,8 +1125,7 @@ function App() {
         </g>
      );
   };
-  const isRightHandShot = shotNumber > 5;
-  const handSideLabel = isRightHandShot ? 'RIGHT HAND' : 'LEFT HAND';
+  const handSideLabel = shotNumber > 5 ? 'RIGHT HAND' : 'LEFT HAND';
   const currentFingerName = steps[shotNumber - 1];
   const currentSavedMeasurement = getStoredMeasurement(results[currentFingerName]);
   const allFingersMeasured = steps.every(finger => results[finger]?.mm && results[finger]?.size);
@@ -1160,7 +1159,6 @@ function App() {
         <Camera className={`w-9 h-9 scale-110 ${!isCameraReady && 'opacity-50'}`} strokeWidth={3} />
      </button>
   );
-  const emptyControlSpace = <div className="w-24" aria-hidden="true" />;
 
   if (currentStep === 'finish') return (
     <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center overflow-y-auto">
@@ -1413,12 +1411,8 @@ function App() {
        </div>
 
        {/* CONTROL SURFACE */}
-       <div className="p-6 sm:p-10 bg-slate-950 border-t border-slate-900/50 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 z-40">
-          <div className="min-w-[6rem] flex items-center justify-start">
-             {isRightHandShot ? emptyControlSpace : captureControl}
-          </div>
-
-          <div className="min-w-0 flex flex-col gap-1.5 text-center">
+       <div className="p-6 sm:p-10 bg-slate-950 border-t border-slate-900/50 flex flex-col items-center justify-center gap-5 z-40">
+          <div className="min-w-0 flex flex-col gap-1.5 text-center w-full max-w-sm">
              <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">{handSideLabel} {shotNumber}/10</span>
              <h3 className="text-xl sm:text-2xl font-black text-white tracking-widest leading-none uppercase italic truncate">{steps[shotNumber-1]}</h3>
              {currentSavedMeasurement && (
@@ -1434,8 +1428,8 @@ function App() {
              )}
           </div>
 
-          <div className="min-w-[6rem] flex items-center justify-end">
-             {isRightHandShot ? captureControl : emptyControlSpace}
+          <div className="flex items-center justify-center">
+             {captureControl}
           </div>
        </div>
     </div>
