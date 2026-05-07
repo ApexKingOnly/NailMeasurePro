@@ -10,6 +10,7 @@ const getFingerIndexForShot = (shotNum) => [20, 16, 12, 8, 4, 4, 8, 12, 16, 20][
 const LEVEL_TOLERANCE_DEGREES = 8;
 const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.12 };
 const DEFAULT_NAIL_BOX = { x: 0.32, y: 0.48, w: 0.36, h: 0.35 };
+const AI_GUIDE_ENDPOINT = '/api/vision-detect';
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -172,6 +173,65 @@ const getDefaultAssistGuide = (width, height) => ({
   },
 });
 
+const normalizePoint = (point, width, height) => {
+  if (!point) return null;
+  const x = Number(point.x);
+  const y = Number(point.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return {
+    x: clamp(x, 0, width),
+    y: clamp(y, 0, height),
+  };
+};
+
+const mergeAssistGuide = (baseGuide, aiGuide, width, height) => {
+  const nextGuide = {
+    quarter: { ...baseGuide.quarter },
+    nail: {
+      left: { ...baseGuide.nail.left },
+      right: { ...baseGuide.nail.right },
+    },
+  };
+
+  const quarter = aiGuide?.quarter;
+  if (quarter) {
+    const x = Number(quarter.x);
+    const y = Number(quarter.y);
+    const r = Number(quarter.r);
+    if ([x, y, r].every(Number.isFinite) && r > 8) {
+      nextGuide.quarter = {
+        ...nextGuide.quarter,
+        x: clamp(x, 0, width),
+        y: clamp(y, 0, height),
+        r: clamp(r, 8, Math.min(width, height) * 0.45),
+      };
+    }
+  }
+
+  const nailLeft = normalizePoint(aiGuide?.nail?.left, width, height);
+  const nailRight = normalizePoint(aiGuide?.nail?.right, width, height);
+  if (nailLeft && nailRight && Math.hypot(nailRight.x - nailLeft.x, nailRight.y - nailLeft.y) > 8) {
+    nextGuide.nail = { left: nailLeft, right: nailRight };
+  }
+
+  return nextGuide;
+};
+
+const requestAssistGuide = async ({ image, width, height, fingerName }) => {
+  const response = await fetch(AI_GUIDE_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image, width, height, fingerName }),
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!response.ok || !contentType.includes('application/json')) {
+    throw new Error('AI guide endpoint unavailable');
+  }
+
+  return response.json();
+};
+
 const getAssistMeasurement = (frame) => {
   if (!frame?.guide) return null;
 
@@ -232,6 +292,7 @@ function App() {
   const isStableSignalRef = useRef(false)
   const shotNumberRef = useRef(1)
   const lastDetectionStateRef = useRef({ quarter: false, finger: false, level: true })
+  const assistRequestRef = useRef(0)
 
   useEffect(() => { shotNumberRef.current = shotNumber }, [shotNumber])
   useEffect(() => { isStableSignalRef.current = isStableSignal }, [isStableSignal])
@@ -741,7 +802,7 @@ function App() {
     advanceSequence(measurement);
   }
 
-  const startAssistMeasurement = () => {
+  const startAssistMeasurement = async () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) {
       setMessage('Camera frame not ready');
@@ -769,16 +830,58 @@ function App() {
       transform.videoHeight * transform.scale
     );
 
+    const image = canvas.toDataURL('image/jpeg', 0.92);
+    const guide = getDefaultAssistGuide(width, height);
+    const requestId = assistRequestRef.current + 1;
+    assistRequestRef.current = requestId;
+
     setAssistFrame({
-      image: canvas.toDataURL('image/jpeg', 0.92),
+      image,
       width,
       height,
-      guide: getDefaultAssistGuide(width, height),
+      guide,
+      ai: { status: 'scanning', label: 'AI SCAN' },
     });
     setDragHandle(null);
     setIsStableSignal(false);
     setMeasurement(null);
-    setMessage('Adjust quarter and nail guides');
+    setMessage('Checking frame with AI guide');
+
+    try {
+      const aiResult = await requestAssistGuide({
+        image,
+        width,
+        height,
+        fingerName: steps[shotNumberRef.current - 1],
+      });
+
+      if (assistRequestRef.current !== requestId) return;
+
+      if (aiResult?.guide && (aiResult.guide.quarter || aiResult.guide.nail)) {
+        setAssistFrame(prev => prev ? ({
+          ...prev,
+          guide: mergeAssistGuide(prev.guide, aiResult.guide, prev.width, prev.height),
+          ai: { status: 'suggested', label: 'AI GUIDE' },
+        }) : prev);
+        setMessage('AI guide ready; adjust if needed');
+      } else {
+        setAssistFrame(prev => prev ? ({
+          ...prev,
+          ai: {
+            status: aiResult?.configured === false ? 'off' : 'manual',
+            label: aiResult?.configured === false ? 'AI OFF' : 'MANUAL',
+          },
+        }) : prev);
+        setMessage('Manual guide ready');
+      }
+    } catch (error) {
+      if (assistRequestRef.current !== requestId) return;
+      setAssistFrame(prev => prev ? ({
+        ...prev,
+        ai: { status: 'manual', label: 'MANUAL' },
+      }) : prev);
+      setMessage('Manual guide ready');
+    }
   }
 
   const getAssistPoint = (event) => {
@@ -828,7 +931,11 @@ function App() {
   }
 
   const resetAssistGuide = () => {
-    setAssistFrame(prev => prev ? { ...prev, guide: getDefaultAssistGuide(prev.width, prev.height) } : prev);
+    setAssistFrame(prev => prev ? {
+      ...prev,
+      guide: getDefaultAssistGuide(prev.width, prev.height),
+      ai: { status: 'manual', label: 'MANUAL' },
+    } : prev);
     setDragHandle(null);
   }
 
@@ -850,6 +957,12 @@ function App() {
   const quarter = assistGuide?.quarter || null;
   const nail = assistGuide?.nail || null;
   const radiusHandle = quarter ? { x: quarter.x + quarter.r, y: quarter.y } : null;
+  const assistAi = assistFrame?.ai || { status: 'manual', label: 'MANUAL' };
+  const assistAiClass = assistAi.status === 'suggested'
+     ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+     : assistAi.status === 'scanning'
+        ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 animate-pulse'
+        : 'bg-slate-900 text-slate-400 border-slate-800';
   const renderAssistHandle = (handle, x, y, color) => (
      <g key={handle} onPointerDown={(event) => startAssistDrag(handle, event)} style={{ cursor: 'grab' }}>
         <circle cx={x} cy={y} r="30" fill="transparent" stroke="transparent" strokeWidth="1" />
@@ -961,6 +1074,9 @@ function App() {
                 <div className="min-w-0">
                    <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">ASSIST {shotNumber}/10</span>
                    <h3 className="text-xl font-black text-white tracking-widest leading-none uppercase italic truncate">{steps[shotNumber-1]}</h3>
+                   <span className={`mt-2 inline-flex px-2 py-1 rounded-full border text-[8px] font-black tracking-widest ${assistAiClass}`}>
+                      {assistAi.label}
+                   </span>
                 </div>
                 <div className="text-right shrink-0">
                    <div className="text-[10px] text-slate-500 font-black tracking-widest uppercase">SIZE</div>
