@@ -814,15 +814,6 @@ function App() {
     }
   }
 
-  const captureShot = () => {
-    if (!isStableSignal || !measurement) {
-      setMessage('Wait for target lock before capture');
-      return;
-    }
-
-    advanceSequence(measurement);
-  }
-
   const startAssistMeasurement = async () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) {
@@ -1052,27 +1043,18 @@ function App() {
   const handSideLabel = isRightHandShot ? 'RIGHT HAND' : 'LEFT HAND';
   const captureControl = (
      <button
-        aria-label="Capture measurement"
-        onClick={captureShot}
-        disabled={!isStableSignal || !measurement}
-        className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all shadow-2xl relative overflow-hidden ring-[12px] ${isStableSignal && measurement ? 'bg-emerald-500 text-slate-950 ring-emerald-500/20 cursor-pointer active:scale-90 active:bg-emerald-400 hover:bg-emerald-400' : 'bg-slate-800/80 text-slate-600 ring-slate-800/20 cursor-not-allowed opacity-80'}`}
+        aria-label="Take snapshot for assisted measurement"
+        onClick={startAssistMeasurement}
+        disabled={!isCameraReady}
+        className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all shadow-2xl relative overflow-hidden ring-[12px] ${isCameraReady ? 'bg-emerald-500 text-slate-950 ring-emerald-500/20 cursor-pointer active:scale-90 active:bg-emerald-400 hover:bg-emerald-400' : 'bg-slate-800/80 text-slate-600 ring-slate-800/20 cursor-not-allowed opacity-80'}`}
      >
-        <Camera className={`w-9 h-9 scale-110 ${(!isStableSignal || !measurement) && 'opacity-50'}`} strokeWidth={3} />
+        <Camera className={`w-9 h-9 scale-110 ${!isCameraReady && 'opacity-50'}`} strokeWidth={3} />
      </button>
   );
   const utilityControls = (
      <div className="flex gap-3">
         <button aria-label="Cancel session" onClick={() => setCurrentStep('welcome')} className="w-14 h-14 flex items-center justify-center bg-slate-900/80 border border-slate-800 rounded-2xl text-slate-500 hover:text-white transition-all active:scale-90 shadow-xl">
            <X className="w-6 h-6" />
-        </button>
-
-        <button
-           aria-label="Freeze frame for assisted measurement"
-           onClick={startAssistMeasurement}
-           disabled={!isCameraReady}
-           className={`w-14 h-14 flex items-center justify-center rounded-2xl border transition-all active:scale-90 shadow-xl ${isCameraReady ? 'bg-slate-900/90 border-emerald-500/40 text-emerald-400 hover:text-emerald-300' : 'bg-slate-900/60 border-slate-800 text-slate-700 cursor-not-allowed'}`}
-        >
-           <Scan className="w-6 h-6" />
         </button>
      </div>
   );
