@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Camera, ShieldAlert, Scan, X, CheckCircle2, ChevronRight } from 'lucide-react'
+import { Camera, ShieldAlert, Scan, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { getFullSizing, calculateFingerWidthPixels, calculateMM, mmToNailSize } from './utils/sizing'
 
 // V30: Explicit 10-Finger Sequence Mapping
@@ -254,6 +254,43 @@ const getAssistMeasurement = (frame) => {
   };
 };
 
+const cloneAssistGuide = (guide) => {
+  if (!guide?.quarter || !guide?.nail?.left || !guide?.nail?.right) return null;
+
+  return {
+    quarter: { ...guide.quarter },
+    nail: {
+      left: { ...guide.nail.left },
+      right: { ...guide.nail.right },
+    },
+  };
+};
+
+const cloneAssistFrame = (frame, ai = frame?.ai) => {
+  const guide = cloneAssistGuide(frame?.guide);
+  if (!frame || !guide) return null;
+
+  return {
+    image: frame.image,
+    width: frame.width,
+    height: frame.height,
+    zoom: frame.zoom || ASSIST_FRAME_ZOOM,
+    guide,
+    ai: ai || { status: 'manual', label: 'MANUAL' },
+  };
+};
+
+const getStoredMeasurement = (result) => {
+  if (!result?.mm || !result?.size) return null;
+  return {
+    mm: result.mm,
+    size: result.size,
+    method: result.method || 'assist',
+    quarterPixels: result.quarterPixels,
+    nailPixels: result.nailPixels,
+  };
+};
+
 function App() {
   // Navigation State
   const [currentStep, setCurrentStep] = useState('welcome')
@@ -327,6 +364,44 @@ function App() {
     isStableSignalRef.current = false
     lastDetectionStateRef.current = { quarter: false, finger: false, level: true }
     setDetectionState(lastDetectionStateRef.current)
+  }
+
+  const resetShotTracking = () => {
+    const resetDetection = { quarter: false, finger: false, level: isLeveledRef.current };
+    setIsStableSignal(false);
+    isStableSignalRef.current = false;
+    lastHandRef.current = null;
+    lastQuarterRef.current = 0;
+    lastDetectionStateRef.current = resetDetection;
+    setDetectionState(resetDetection);
+  }
+
+  const goToShot = (targetShotNumber, { openSavedFrame = true } = {}) => {
+    const nextShotNumber = clamp(targetShotNumber, 1, steps.length);
+    const fingerName = steps[nextShotNumber - 1];
+    const savedResult = results[fingerName];
+    const savedMeasurement = getStoredMeasurement(savedResult);
+    const savedFrame = openSavedFrame
+      ? cloneAssistFrame(savedResult?.frame, { status: 'saved', label: 'SAVED' })
+      : null;
+
+    setShotNumber(nextShotNumber);
+    shotNumberRef.current = nextShotNumber;
+    setCurrentStep('wizard');
+    setDragHandle(null);
+    dragOffsetRef.current = { x: 0, y: 0 };
+    setAssistFrame(savedFrame);
+    setMeasurement(savedMeasurement);
+    resetShotTracking();
+    isAdvancingRef.current = false;
+
+    if (savedFrame) {
+      setMessage(`Review saved ${fingerName}`);
+    } else if (savedMeasurement) {
+      setMessage(`Saved ${fingerName}; tap camera to retake`);
+    } else {
+      setMessage(`Place ${fingerName} in lower target`);
+    }
   }
 
   // Phase 0: Environment Lockdown (2s)
@@ -770,6 +845,7 @@ function App() {
   const advanceSequence = (nextMeasurement) => {
     if (isAdvancingRef.current) return;
     isAdvancingRef.current = true;
+    const savedFrame = cloneAssistFrame(assistFrame, { status: 'saved', label: 'SAVED' });
 
     setAssistFrame(null);
     setDragHandle(null);
@@ -782,11 +858,13 @@ function App() {
     const currentShotNumber = clamp(shotNumberRef.current || shotNumber, 1, steps.length);
     const fingerName = steps[currentShotNumber - 1];
     const resetDetection = { quarter: false, finger: false, level: isLeveledRef.current };
+    const storedMeasurement = savedFrame
+      ? { ...nextMeasurement, frame: savedFrame }
+      : nextMeasurement;
 
-    setResults(prev => ({ ...prev, [fingerName]: nextMeasurement }));
+    setResults(prev => ({ ...prev, [fingerName]: storedMeasurement }));
     setIsStableSignal(false);
     isStableSignalRef.current = false;
-    setMeasurement(null);
     lastHandRef.current = null;
     lastQuarterRef.current = 0;
     lastDetectionStateRef.current = resetDetection;
@@ -800,14 +878,22 @@ function App() {
 
     if (currentShotNumber < steps.length) {
       const nextShotNumber = currentShotNumber + 1;
+      const nextFingerName = steps[nextShotNumber - 1];
+      const nextSavedResult = results[nextFingerName];
+      const nextSavedFrame = cloneAssistFrame(nextSavedResult?.frame, { status: 'saved', label: 'SAVED' });
+      const nextSavedMeasurement = getStoredMeasurement(nextSavedResult);
+
       setShotNumber(nextShotNumber);
       shotNumberRef.current = nextShotNumber;
-      setMessage(`Place ${steps[nextShotNumber - 1]} in lower target`);
+      setAssistFrame(nextSavedFrame);
+      setMeasurement(nextSavedMeasurement);
+      setMessage(nextSavedFrame ? `Review saved ${nextFingerName}` : `Place ${nextFingerName} in lower target`);
       setCurrentStep('wizard');
       releaseAdvanceLock();
     } else {
       setShotNumber(steps.length);
       shotNumberRef.current = steps.length;
+      setMeasurement(getStoredMeasurement(storedMeasurement));
       setMessage('All nails measured');
       setCurrentStep('finish');
       releaseAdvanceLock();
@@ -1013,7 +1099,7 @@ function App() {
   const assistZoom = assistFrame?.zoom || 1;
   const assistZoomStyle = { transform: `scale(${assistZoom})`, transformOrigin: 'center center' };
   const assistAi = assistFrame?.ai || { status: 'manual', label: 'MANUAL' };
-  const assistAiClass = assistAi.status === 'suggested'
+  const assistAiClass = assistAi.status === 'suggested' || assistAi.status === 'saved'
      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
      : assistAi.status === 'scanning'
         ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 animate-pulse'
@@ -1041,6 +1127,29 @@ function App() {
   };
   const isRightHandShot = shotNumber > 5;
   const handSideLabel = isRightHandShot ? 'RIGHT HAND' : 'LEFT HAND';
+  const currentFingerName = steps[shotNumber - 1];
+  const currentSavedMeasurement = getStoredMeasurement(results[currentFingerName]);
+  const allFingersMeasured = steps.every(finger => results[finger]?.mm && results[finger]?.size);
+  const topNavigationControls = (
+     <div className="absolute top-4 left-4 z-[95] flex items-center gap-2">
+        <button
+           aria-label="Go to previous finger"
+           onClick={() => goToShot(shotNumberRef.current - 1)}
+           disabled={shotNumber <= 1}
+           className={`w-12 h-12 flex items-center justify-center rounded-2xl border shadow-xl active:scale-95 transition-all ${shotNumber <= 1 ? 'bg-slate-950/55 border-slate-800 text-slate-700 cursor-not-allowed' : 'bg-slate-950/85 border-slate-700 text-white hover:border-emerald-500/50'}`}
+        >
+           <ChevronLeft className="w-6 h-6" strokeWidth={3} />
+        </button>
+        <button
+           aria-label="Go to next finger"
+           onClick={() => goToShot(shotNumberRef.current + 1)}
+           disabled={shotNumber >= steps.length}
+           className={`w-12 h-12 flex items-center justify-center rounded-2xl border shadow-xl active:scale-95 transition-all ${shotNumber >= steps.length ? 'bg-slate-950/55 border-slate-800 text-slate-700 cursor-not-allowed' : 'bg-slate-950/85 border-slate-700 text-white hover:border-emerald-500/50'}`}
+        >
+           <ChevronRight className="w-6 h-6" strokeWidth={3} />
+        </button>
+     </div>
+  );
   const captureControl = (
      <button
         aria-label="Take snapshot for assisted measurement"
@@ -1051,13 +1160,7 @@ function App() {
         <Camera className={`w-9 h-9 scale-110 ${!isCameraReady && 'opacity-50'}`} strokeWidth={3} />
      </button>
   );
-  const utilityControls = (
-     <div className="flex gap-3">
-        <button aria-label="Cancel session" onClick={() => setCurrentStep('welcome')} className="w-14 h-14 flex items-center justify-center bg-slate-900/80 border border-slate-800 rounded-2xl text-slate-500 hover:text-white transition-all active:scale-90 shadow-xl">
-           <X className="w-6 h-6" />
-        </button>
-     </div>
-  );
+  const emptyControlSpace = <div className="w-24" aria-hidden="true" />;
 
   if (currentStep === 'finish') return (
     <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center overflow-y-auto">
@@ -1102,6 +1205,13 @@ function App() {
        </div>
 
        <div className="flex flex-col gap-3 w-full max-w-sm">
+          <button
+             onClick={() => goToShot(1)}
+             className="w-full py-5 bg-slate-900 border border-slate-700 text-slate-200 font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-xs tracking-widest uppercase mb-1"
+          >
+             <ChevronLeft className="w-4 h-4" /> EDIT MEASUREMENTS
+          </button>
+
           <button 
              onClick={() => {
                 const text = steps.map(f => `${f}: Size ${results[f]?.size} (${results[f]?.mm}mm)`).join('\n');
@@ -1155,10 +1265,11 @@ function App() {
     <div className="fixed inset-0 bg-black flex flex-col font-sans overflow-hidden select-none">
        {/* SHUTTER FLASH LAYER */}
        {shutterFlash && <div className="absolute inset-0 bg-white z-[100] animate-out fade-out duration-150" />}
+       {topNavigationControls}
 
        {assistFrame && quarter && nail && radiusHandle && (
           <div className="absolute inset-0 z-[90] bg-slate-950 flex flex-col font-sans overflow-hidden">
-             <div className="px-5 pt-10 pb-4 border-b border-slate-900/80 flex items-center justify-between gap-4">
+             <div className="px-5 pt-20 pb-4 border-b border-slate-900/80 flex items-center justify-between gap-4">
                 <div className="min-w-0">
                    <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">ASSIST {shotNumber}/10</span>
                    <h3 className="text-xl font-black text-white tracking-widest leading-none uppercase italic truncate">{steps[shotNumber-1]}</h3>
@@ -1224,19 +1335,6 @@ function App() {
              </div>
 
              <div className="p-5 bg-slate-950 border-t border-slate-900/80 flex items-center gap-3">
-                <button
-                   aria-label="Cancel assisted measurement"
-                   onClick={() => {
-                      setAssistFrame(null);
-                      setDragHandle(null);
-                      dragOffsetRef.current = { x: 0, y: 0 };
-                      setMessage(`Place ${steps[shotNumberRef.current - 1]} in lower target`);
-                   }}
-                   className="w-14 h-14 flex items-center justify-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 active:scale-95"
-                >
-                   <X className="w-6 h-6" />
-                </button>
-
                 <button
                    aria-label="Reset assisted guides"
                    onClick={resetAssistGuide}
@@ -1317,16 +1415,27 @@ function App() {
        {/* CONTROL SURFACE */}
        <div className="p-6 sm:p-10 bg-slate-950 border-t border-slate-900/50 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 z-40">
           <div className="min-w-[6rem] flex items-center justify-start">
-             {isRightHandShot ? utilityControls : captureControl}
+             {isRightHandShot ? emptyControlSpace : captureControl}
           </div>
 
           <div className="min-w-0 flex flex-col gap-1.5 text-center">
              <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">{handSideLabel} {shotNumber}/10</span>
              <h3 className="text-xl sm:text-2xl font-black text-white tracking-widest leading-none uppercase italic truncate">{steps[shotNumber-1]}</h3>
+             {currentSavedMeasurement && (
+                <span className="text-[9px] text-emerald-400 font-black tracking-widest uppercase">SAVED #{currentSavedMeasurement.size} / {currentSavedMeasurement.mm}mm</span>
+             )}
+             {allFingersMeasured && (
+                <button
+                   onClick={() => setCurrentStep('finish')}
+                   className="mx-auto mt-1 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/35 text-emerald-300 text-[9px] font-black tracking-widest uppercase active:scale-95"
+                >
+                   Review Report
+                </button>
+             )}
           </div>
 
           <div className="min-w-[6rem] flex items-center justify-end">
-             {isRightHandShot ? captureControl : utilityControls}
+             {isRightHandShot ? captureControl : emptyControlSpace}
           </div>
        </div>
     </div>
