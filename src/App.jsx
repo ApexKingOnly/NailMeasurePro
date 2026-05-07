@@ -966,8 +966,8 @@ function App() {
   const renderAssistHandle = (handle, x, y, color) => (
      <g key={handle} onPointerDown={(event) => startAssistDrag(handle, event)} style={{ cursor: 'grab' }}>
         <circle cx={x} cy={y} r="30" fill="transparent" stroke="transparent" strokeWidth="1" />
-        <circle cx={x} cy={y} r="9" fill="rgba(15,23,42,0.92)" stroke={color} strokeWidth="3" />
-        <circle cx={x} cy={y} r="3" fill={color} />
+        <circle cx={x} cy={y} r="10" fill="transparent" stroke={color} strokeWidth="2.25" strokeOpacity="0.72" />
+        <circle cx={x} cy={y} r="3.5" fill="transparent" stroke={color} strokeWidth="1.5" strokeOpacity="0.58" />
      </g>
   );
 
