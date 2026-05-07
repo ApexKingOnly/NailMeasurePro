@@ -1048,6 +1048,34 @@ function App() {
         </g>
      );
   };
+  const isRightHandShot = shotNumber > 5;
+  const handSideLabel = isRightHandShot ? 'RIGHT HAND' : 'LEFT HAND';
+  const captureControl = (
+     <button
+        aria-label="Capture measurement"
+        onClick={captureShot}
+        disabled={!isStableSignal || !measurement}
+        className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all shadow-2xl relative overflow-hidden ring-[12px] ${isStableSignal && measurement ? 'bg-emerald-500 text-slate-950 ring-emerald-500/20 cursor-pointer active:scale-90 active:bg-emerald-400 hover:bg-emerald-400' : 'bg-slate-800/80 text-slate-600 ring-slate-800/20 cursor-not-allowed opacity-80'}`}
+     >
+        <Camera className={`w-9 h-9 scale-110 ${(!isStableSignal || !measurement) && 'opacity-50'}`} strokeWidth={3} />
+     </button>
+  );
+  const utilityControls = (
+     <div className="flex gap-3">
+        <button aria-label="Cancel session" onClick={() => setCurrentStep('welcome')} className="w-14 h-14 flex items-center justify-center bg-slate-900/80 border border-slate-800 rounded-2xl text-slate-500 hover:text-white transition-all active:scale-90 shadow-xl">
+           <X className="w-6 h-6" />
+        </button>
+
+        <button
+           aria-label="Freeze frame for assisted measurement"
+           onClick={startAssistMeasurement}
+           disabled={!isCameraReady}
+           className={`w-14 h-14 flex items-center justify-center rounded-2xl border transition-all active:scale-90 shadow-xl ${isCameraReady ? 'bg-slate-900/90 border-emerald-500/40 text-emerald-400 hover:text-emerald-300' : 'bg-slate-900/60 border-slate-800 text-slate-700 cursor-not-allowed'}`}
+        >
+           <Scan className="w-6 h-6" />
+        </button>
+     </div>
+  );
 
   if (currentStep === 'finish') return (
     <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center overflow-y-auto">
@@ -1305,34 +1333,18 @@ function App() {
        </div>
 
        {/* CONTROL SURFACE */}
-       <div className="p-10 bg-slate-950 border-t border-slate-900/50 flex items-center justify-between z-40">
-          <div className="flex flex-col gap-1.5">
-             <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">PRECISION SOLO {shotNumber}/10</span>
-             <h3 className="text-2xl font-black text-white tracking-widest leading-none uppercase italic">{steps[shotNumber-1]}</h3>
+       <div className="p-6 sm:p-10 bg-slate-950 border-t border-slate-900/50 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 z-40">
+          <div className="min-w-[6rem] flex items-center justify-start">
+             {isRightHandShot ? utilityControls : captureControl}
           </div>
 
-          <div className="flex gap-4">
-             <button aria-label="Cancel session" onClick={() => setCurrentStep('welcome')} className="w-16 h-16 flex items-center justify-center bg-slate-900/80 border border-slate-800 rounded-3xl text-slate-500 hover:text-white transition-all active:scale-90 shadow-xl">
-                <X className="w-7 h-7" />
-             </button>
+          <div className="min-w-0 flex flex-col gap-1.5 text-center">
+             <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">{handSideLabel} {shotNumber}/10</span>
+             <h3 className="text-xl sm:text-2xl font-black text-white tracking-widest leading-none uppercase italic truncate">{steps[shotNumber-1]}</h3>
+          </div>
 
-             <button
-                  aria-label="Freeze frame for assisted measurement"
-                  onClick={startAssistMeasurement}
-                  disabled={!isCameraReady}
-                  className={`w-16 h-16 flex items-center justify-center rounded-3xl border transition-all active:scale-90 shadow-xl ${isCameraReady ? 'bg-slate-900/90 border-emerald-500/40 text-emerald-400 hover:text-emerald-300' : 'bg-slate-900/60 border-slate-800 text-slate-700 cursor-not-allowed'}`}
-               >
-                  <Scan className="w-7 h-7" />
-               </button>
-             
-             <button 
-                  aria-label="Capture measurement"
-                  onClick={captureShot}
-                  disabled={!isStableSignal || !measurement}
-                  className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all shadow-2xl relative overflow-hidden ring-[12px] ${isStableSignal && measurement ? 'bg-emerald-500 text-slate-950 ring-emerald-500/20 cursor-pointer active:scale-90 active:bg-emerald-400 hover:bg-emerald-400' : 'bg-slate-800/80 text-slate-600 ring-slate-800/20 cursor-not-allowed opacity-80'}`}
-               >
-                  <Camera className={`w-9 h-9 scale-110 ${(!isStableSignal || !measurement) && 'opacity-50'}`} strokeWidth={3} />
-               </button>
+          <div className="min-w-[6rem] flex items-center justify-end">
+             {isRightHandShot ? captureControl : utilityControls}
           </div>
        </div>
     </div>
