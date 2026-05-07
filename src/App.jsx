@@ -12,6 +12,7 @@ const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.15 };
 const DEFAULT_NAIL_BOX = { x: 0.275, y: 0.43625, w: 0.45, h: 0.4375 };
 const AI_GUIDE_ENDPOINT = '/api/vision-detect';
 const NAIL_EDGE_HANDLE_DROP = 112;
+const ASSIST_FRAME_ZOOM = 1.25;
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -842,6 +843,7 @@ function App() {
       image,
       width,
       height,
+      zoom: ASSIST_FRAME_ZOOM,
       guide,
       ai: { status: 'scanning', label: 'AI SCAN' },
     });
@@ -891,9 +893,15 @@ function App() {
   const getAssistPoint = (event) => {
     if (!assistFrame || !assistSurfaceRef.current) return null;
     const rect = assistSurfaceRef.current.getBoundingClientRect();
+    const zoom = Number(assistFrame.zoom || 1);
+    const normalizedX = (event.clientX - rect.left) / rect.width;
+    const normalizedY = (event.clientY - rect.top) / rect.height;
+    const imageX = ((normalizedX - 0.5) / zoom + 0.5) * assistFrame.width;
+    const imageY = ((normalizedY - 0.5) / zoom + 0.5) * assistFrame.height;
+
     return {
-      x: clamp((event.clientX - rect.left) * assistFrame.width / rect.width, 0, assistFrame.width),
-      y: clamp((event.clientY - rect.top) * assistFrame.height / rect.height, 0, assistFrame.height),
+      x: clamp(imageX, 0, assistFrame.width),
+      y: clamp(imageY, 0, assistFrame.height),
     };
   }
 
@@ -994,6 +1002,8 @@ function App() {
   const quarter = assistGuide?.quarter || null;
   const nail = assistGuide?.nail || null;
   const radiusHandle = quarter ? { x: quarter.x + quarter.r, y: quarter.y } : null;
+  const assistZoom = assistFrame?.zoom || 1;
+  const assistZoomStyle = { transform: `scale(${assistZoom})`, transformOrigin: 'center center' };
   const assistAi = assistFrame?.ai || { status: 'manual', label: 'MANUAL' };
   const assistAiClass = assistAi.status === 'suggested'
      ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
@@ -1148,9 +1158,16 @@ function App() {
                    onPointerUp={stopAssistDrag}
                    onPointerCancel={stopAssistDrag}
                 >
-                   <img src={assistFrame.image} alt="" className="absolute inset-0 w-full h-full object-cover" draggable="false" />
+                   <img
+                      src={assistFrame.image}
+                      alt=""
+                      className="absolute inset-0 w-full h-full object-cover"
+                      style={assistZoomStyle}
+                      draggable="false"
+                   />
                    <svg
                       className="absolute inset-0 w-full h-full"
+                      style={assistZoomStyle}
                       viewBox={`0 0 ${assistFrame.width} ${assistFrame.height}`}
                       preserveAspectRatio="none"
                    >
