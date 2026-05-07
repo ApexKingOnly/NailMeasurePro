@@ -296,6 +296,7 @@ function App() {
   const lastDetectionStateRef = useRef({ quarter: false, finger: false, level: true })
   const assistRequestRef = useRef(0)
   const dragOffsetRef = useRef({ x: 0, y: 0 })
+  const isAdvancingRef = useRef(false)
 
   useEffect(() => { shotNumberRef.current = shotNumber }, [shotNumber])
   useEffect(() => { isStableSignalRef.current = isStableSignal }, [isStableSignal])
@@ -315,6 +316,7 @@ function App() {
     setMeasurement(null)
     setAssistFrame(null)
     setDragHandle(null)
+    isAdvancingRef.current = false
     setResults({})
     setMessage('Activating Hardware...')
     lastHandRef.current = null
@@ -766,6 +768,9 @@ function App() {
   }, [isVisionReady, currentStep]);
 
   const advanceSequence = (nextMeasurement) => {
+    if (isAdvancingRef.current) return;
+    isAdvancingRef.current = true;
+
     setAssistFrame(null);
     setDragHandle(null);
     dragOffsetRef.current = { x: 0, y: 0 };
@@ -774,26 +779,38 @@ function App() {
     setShutterFlash(true);
     setTimeout(() => setShutterFlash(false), 80);
 
-    const fingerName = steps[shotNumber-1];
-    setResults(prev => ({ ...prev, [fingerName]: nextMeasurement }));
-    
-    if (shotNumber < 10) {
-      const nextShotNumber = shotNumber + 1;
-      const resetDetection = { quarter: false, finger: false, level: isLeveledRef.current };
+    const currentShotNumber = clamp(shotNumberRef.current || shotNumber, 1, steps.length);
+    const fingerName = steps[currentShotNumber - 1];
+    const resetDetection = { quarter: false, finger: false, level: isLeveledRef.current };
 
+    setResults(prev => ({ ...prev, [fingerName]: nextMeasurement }));
+    setIsStableSignal(false);
+    isStableSignalRef.current = false;
+    setMeasurement(null);
+    lastHandRef.current = null;
+    lastQuarterRef.current = 0;
+    lastDetectionStateRef.current = resetDetection;
+    setDetectionState(resetDetection);
+
+    const releaseAdvanceLock = () => {
+      window.setTimeout(() => {
+        isAdvancingRef.current = false;
+      }, 180);
+    };
+
+    if (currentShotNumber < steps.length) {
+      const nextShotNumber = currentShotNumber + 1;
       setShotNumber(nextShotNumber);
       shotNumberRef.current = nextShotNumber;
-      setIsStableSignal(false);
-      isStableSignalRef.current = false;
-      setMeasurement(null);
       setMessage(`Place ${steps[nextShotNumber - 1]} in lower target`);
-      lastHandRef.current = null;
-      lastQuarterRef.current = 0;
-      lastDetectionStateRef.current = resetDetection;
-      setDetectionState(resetDetection);
       setCurrentStep('wizard');
+      releaseAdvanceLock();
     } else {
-      setTimeout(() => setCurrentStep('finish'), 200);
+      setShotNumber(steps.length);
+      shotNumberRef.current = steps.length;
+      setMessage('All nails measured');
+      setCurrentStep('finish');
+      releaseAdvanceLock();
     }
   }
 
@@ -1086,7 +1103,7 @@ function App() {
              <ChevronRight className="w-4 h-4" /> COPY TEXT REPORT
           </button>
           
-          <button onClick={() => setCurrentStep('welcome')} className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl shadow-2xl transition-all active:scale-95 text-lg shadow-emerald-500/20 ring-4 ring-emerald-500/10 uppercase">FINISH SESSION</button>
+          <button onClick={() => setCurrentStep('welcome')} className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl shadow-2xl transition-all active:scale-95 text-lg shadow-emerald-500/20 ring-4 ring-emerald-500/10 uppercase">START NEW SESSION</button>
        </div>
     </div>
   )
