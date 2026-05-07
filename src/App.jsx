@@ -11,6 +11,7 @@ const LEVEL_TOLERANCE_DEGREES = 8;
 const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.12 };
 const DEFAULT_NAIL_BOX = { x: 0.32, y: 0.48, w: 0.36, h: 0.35 };
 const AI_GUIDE_ENDPOINT = '/api/vision-detect';
+const NAIL_EDGE_HANDLE_DROP = 56;
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -293,6 +294,7 @@ function App() {
   const shotNumberRef = useRef(1)
   const lastDetectionStateRef = useRef({ quarter: false, finger: false, level: true })
   const assistRequestRef = useRef(0)
+  const dragOffsetRef = useRef({ x: 0, y: 0 })
 
   useEffect(() => { shotNumberRef.current = shotNumber }, [shotNumber])
   useEffect(() => { isStableSignalRef.current = isStableSignal }, [isStableSignal])
@@ -765,6 +767,7 @@ function App() {
   const advanceSequence = (nextMeasurement) => {
     setAssistFrame(null);
     setDragHandle(null);
+    dragOffsetRef.current = { x: 0, y: 0 };
 
     if (navigator.vibrate) { try { navigator.vibrate(15); } catch(e){} }
     setShutterFlash(true);
@@ -843,6 +846,7 @@ function App() {
       ai: { status: 'scanning', label: 'AI SCAN' },
     });
     setDragHandle(null);
+    dragOffsetRef.current = { x: 0, y: 0 };
     setIsStableSignal(false);
     setMeasurement(null);
     setMessage('Checking frame with AI guide');
@@ -893,9 +897,24 @@ function App() {
     };
   }
 
+  const getAssistHandleAnchor = (handle, frame = assistFrame) => {
+    if (!frame?.guide) return null;
+    const { quarter, nail } = frame.guide;
+
+    if (handle === 'quarter') return { x: quarter.x, y: quarter.y };
+    if (handle === 'quarterRadius') return { x: quarter.x + quarter.r, y: quarter.y };
+    if (handle === 'nailLeft') return nail.left;
+    if (handle === 'nailRight') return nail.right;
+    return null;
+  }
+
   const moveAssistHandle = (handle, event) => {
-    const point = getAssistPoint(event);
-    if (!point) return;
+    const pointer = getAssistPoint(event);
+    if (!pointer) return;
+    const point = {
+      x: pointer.x + dragOffsetRef.current.x,
+      y: pointer.y + dragOffsetRef.current.y,
+    };
 
     setAssistFrame(prev => {
       if (!prev) return prev;
@@ -908,15 +927,21 @@ function App() {
       };
 
       if (handle === 'quarter') {
-        guide.quarter.x = point.x;
-        guide.quarter.y = point.y;
+        guide.quarter.x = clamp(point.x, 0, prev.width);
+        guide.quarter.y = clamp(point.y, 0, prev.height);
       } else if (handle === 'quarterRadius') {
         const radius = Math.hypot(point.x - guide.quarter.x, point.y - guide.quarter.y);
         guide.quarter.r = clamp(radius, prev.width * 0.04, prev.width * 0.32);
       } else if (handle === 'nailLeft') {
-        guide.nail.left = point;
+        guide.nail.left = {
+          x: clamp(point.x, 0, prev.width),
+          y: clamp(point.y, 0, prev.height),
+        };
       } else if (handle === 'nailRight') {
-        guide.nail.right = point;
+        guide.nail.right = {
+          x: clamp(point.x, 0, prev.width),
+          y: clamp(point.y, 0, prev.height),
+        };
       }
 
       return { ...prev, guide };
@@ -926,8 +951,18 @@ function App() {
   const startAssistDrag = (handle, event) => {
     event.preventDefault();
     event.stopPropagation();
+    const pointer = getAssistPoint(event);
+    const anchor = getAssistHandleAnchor(handle);
+    dragOffsetRef.current = pointer && anchor
+      ? { x: anchor.x - pointer.x, y: anchor.y - pointer.y }
+      : { x: 0, y: 0 };
     setDragHandle(handle);
     moveAssistHandle(handle, event);
+  }
+
+  const stopAssistDrag = () => {
+    dragOffsetRef.current = { x: 0, y: 0 };
+    setDragHandle(null);
   }
 
   const resetAssistGuide = () => {
@@ -937,6 +972,7 @@ function App() {
       ai: { status: 'manual', label: 'MANUAL' },
     } : prev);
     setDragHandle(null);
+    dragOffsetRef.current = { x: 0, y: 0 };
   }
 
   const applyAssistMeasurement = () => {
@@ -948,6 +984,7 @@ function App() {
 
     setAssistFrame(null);
     setDragHandle(null);
+    dragOffsetRef.current = { x: 0, y: 0 };
     advanceSequence(nextMeasurement);
   }
 
@@ -970,6 +1007,20 @@ function App() {
         <circle cx={x} cy={y} r="3.5" fill="transparent" stroke={color} strokeWidth="1.5" strokeOpacity="0.58" />
      </g>
   );
+  const renderNailEdgeHandle = (handle, x, y, color) => {
+     const gripY = Math.max(18, y - NAIL_EDGE_HANDLE_DROP);
+
+     return (
+        <g key={handle} onPointerDown={(event) => startAssistDrag(handle, event)} style={{ cursor: 'grab' }}>
+           <line x1={x} y1={gripY - 8} x2={x} y2={y} stroke="transparent" strokeWidth="34" strokeLinecap="round" />
+           <circle cx={x} cy={gripY} r="30" fill="transparent" stroke="transparent" strokeWidth="1" />
+           <line x1={x} y1={gripY + 11} x2={x} y2={y} stroke={color} strokeWidth="2.35" strokeOpacity="0.78" strokeLinecap="round" />
+           <line x1={x - 11} y1={y} x2={x + 11} y2={y} stroke={color} strokeWidth="2.35" strokeOpacity="0.92" strokeLinecap="round" />
+           <circle cx={x} cy={gripY} r="10" fill="transparent" stroke={color} strokeWidth="2.25" strokeOpacity="0.72" />
+           <circle cx={x} cy={gripY} r="3.5" fill="transparent" stroke={color} strokeWidth="1.5" strokeOpacity="0.58" />
+        </g>
+     );
+  };
 
   if (currentStep === 'finish') return (
     <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center overflow-y-auto">
@@ -1094,8 +1145,8 @@ function App() {
                       width: `min(100%, calc(72vh * ${assistFrame.width / assistFrame.height}))`,
                    }}
                    onPointerMove={(event) => dragHandle && moveAssistHandle(dragHandle, event)}
-                   onPointerUp={() => setDragHandle(null)}
-                   onPointerCancel={() => setDragHandle(null)}
+                   onPointerUp={stopAssistDrag}
+                   onPointerCancel={stopAssistDrag}
                 >
                    <img src={assistFrame.image} alt="" className="absolute inset-0 w-full h-full object-cover" draggable="false" />
                    <svg
@@ -1119,13 +1170,11 @@ function App() {
 
                       <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#f8fafc" strokeWidth="5" strokeLinecap="round" opacity="0.25" filter="url(#assistGlow)" />
                       <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#10b981" strokeWidth="2.25" strokeLinecap="round" strokeDasharray="7 6" />
-                      <line x1={nail.left.x} y1={nail.left.y - 24} x2={nail.left.x} y2={nail.left.y + 24} stroke="#f8fafc" strokeWidth="2.5" strokeLinecap="round" />
-                      <line x1={nail.right.x} y1={nail.right.y - 24} x2={nail.right.x} y2={nail.right.y + 24} stroke="#f8fafc" strokeWidth="2.5" strokeLinecap="round" />
 
                       {renderAssistHandle('quarter', quarter.x, quarter.y, '#10b981')}
                       {renderAssistHandle('quarterRadius', radiusHandle.x, radiusHandle.y, '#22d3ee')}
-                      {renderAssistHandle('nailLeft', nail.left.x, nail.left.y, '#f8fafc')}
-                      {renderAssistHandle('nailRight', nail.right.x, nail.right.y, '#f8fafc')}
+                      {renderNailEdgeHandle('nailLeft', nail.left.x, nail.left.y, '#f8fafc')}
+                      {renderNailEdgeHandle('nailRight', nail.right.x, nail.right.y, '#f8fafc')}
                    </svg>
                 </div>
              </div>
@@ -1136,6 +1185,7 @@ function App() {
                    onClick={() => {
                       setAssistFrame(null);
                       setDragHandle(null);
+                      dragOffsetRef.current = { x: 0, y: 0 };
                       setMessage(`Place ${steps[shotNumberRef.current - 1]} in lower target`);
                    }}
                    className="w-14 h-14 flex items-center justify-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 active:scale-95"
