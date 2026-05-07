@@ -8,10 +8,10 @@ import { getFullSizing, calculateFingerWidthPixels, calculateMM, mmToNailSize } 
 const getFingerIndexForShot = (shotNum) => [20, 16, 12, 8, 4, 4, 8, 12, 16, 20][shotNum - 1] || 8;
 
 const LEVEL_TOLERANCE_DEGREES = 8;
-const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.12 };
-const DEFAULT_NAIL_BOX = { x: 0.32, y: 0.48, w: 0.36, h: 0.35 };
+const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.15 };
+const DEFAULT_NAIL_BOX = { x: 0.275, y: 0.43625, w: 0.45, h: 0.4375 };
 const AI_GUIDE_ENDPOINT = '/api/vision-detect';
-const NAIL_EDGE_HANDLE_DROP = 56;
+const NAIL_EDGE_HANDLE_DROP = 112;
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
