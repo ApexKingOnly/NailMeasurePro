@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { ChevronRight, LogOut, Save, Search, ShieldCheck } from 'lucide-react';
 
 const ADMIN_TOKEN_KEY = 'nailmeasure_admin_token';
-const ADMIN_EMAIL_KEY = 'nailmeasure_admin_email';
+const ADMIN_NAME_KEY = 'nailmeasure_admin_name';
+const LEGACY_ADMIN_EMAIL_KEY = 'nailmeasure_admin_email';
 
 const getStoredValue = (key) => {
   try {
@@ -37,8 +38,8 @@ const formatDate = (value) => {
 
 function AdminPortal() {
   const [token, setToken] = useState(() => getStoredValue(ADMIN_TOKEN_KEY));
-  const [adminEmail, setAdminEmail] = useState(() => getStoredValue(ADMIN_EMAIL_KEY));
-  const [loginEmail, setLoginEmail] = useState(() => getStoredValue(ADMIN_EMAIL_KEY));
+  const [adminName, setAdminName] = useState(() => getStoredValue(ADMIN_NAME_KEY) || getStoredValue(LEGACY_ADMIN_EMAIL_KEY));
+  const [loginName, setLoginName] = useState(() => getStoredValue(ADMIN_NAME_KEY) || getStoredValue(LEGACY_ADMIN_EMAIL_KEY));
   const [password, setPassword] = useState('');
   const [searchEmail, setSearchEmail] = useState('');
   const [sessions, setSessions] = useState([]);
@@ -48,9 +49,10 @@ function AdminPortal() {
 
   const logout = () => {
     removeStoredValue(ADMIN_TOKEN_KEY);
-    removeStoredValue(ADMIN_EMAIL_KEY);
+    removeStoredValue(ADMIN_NAME_KEY);
+    removeStoredValue(LEGACY_ADMIN_EMAIL_KEY);
     setToken('');
-    setAdminEmail('');
+    setAdminName('');
     setSessions([]);
     setDrafts({});
     setStatus({ type: 'idle', text: '' });
@@ -65,7 +67,7 @@ function AdminPortal() {
       const response = await fetch('/api/admin-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: loginEmail, password }),
+        body: JSON.stringify({ name: loginName, password }),
       });
       const data = await response.json();
 
@@ -74,9 +76,9 @@ function AdminPortal() {
       }
 
       setToken(data.token);
-      setAdminEmail(data.adminEmail || loginEmail);
+      setAdminName(data.adminName || loginName);
       setStoredValue(ADMIN_TOKEN_KEY, data.token);
-      setStoredValue(ADMIN_EMAIL_KEY, data.adminEmail || loginEmail);
+      setStoredValue(ADMIN_NAME_KEY, data.adminName || loginName);
       setPassword('');
       setStatus({ type: 'success', text: 'Admin signed in' });
     } catch (error) {
@@ -201,11 +203,11 @@ function AdminPortal() {
           <h1 className="text-2xl font-black uppercase italic tracking-tight mb-2">Admin Login</h1>
           <p className="text-[10px] text-slate-500 font-black tracking-widest uppercase mb-8">Nail set review console</p>
 
-          <label className="block text-[10px] text-slate-500 font-black tracking-widest uppercase mb-2">Admin Email</label>
+          <label className="block text-[10px] text-slate-500 font-black tracking-widest uppercase mb-2">Admin Name</label>
           <input
-            type="email"
-            value={loginEmail}
-            onChange={(event) => setLoginEmail(event.target.value)}
+            type="text"
+            value={loginName}
+            onChange={(event) => setLoginName(event.target.value)}
             className="w-full h-14 bg-black/40 border border-slate-800 rounded-2xl px-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70 mb-4"
             autoComplete="username"
           />
@@ -243,7 +245,7 @@ function AdminPortal() {
           <div>
             <p className="text-[10px] text-emerald-400 font-black tracking-widest uppercase mb-2">Admin Console</p>
             <h1 className="text-3xl font-black italic uppercase tracking-tight">Customer Nail Sets</h1>
-            <p className="text-xs text-slate-500 mt-2 font-bold">{adminEmail}</p>
+            <p className="text-xs text-slate-500 mt-2 font-bold">{adminName}</p>
           </div>
           <button
             onClick={logout}

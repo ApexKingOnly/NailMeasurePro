@@ -56,7 +56,7 @@ const verifyAdmin = (req) => {
     return { ok: false, status: 401, error: 'Admin session expired' };
   }
 
-  return { ok: true, email: claims.email };
+  return { ok: true, name: claims.name || claims.email || 'admin' };
 };
 
 const getSupabaseConfig = () => {
@@ -175,7 +175,7 @@ export default async function handler(req, res) {
           nail_size: size,
           measurement_mm: mm,
           admin_note: adminNote || null,
-          admin_email: admin.email,
+          admin_email: admin.name,
           admin_edited_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })

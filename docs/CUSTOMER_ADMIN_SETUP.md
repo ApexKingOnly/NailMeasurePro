@@ -30,7 +30,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 CUSTOMER_NAIL_SESSIONS_TABLE=customer_nail_sessions
 CUSTOMER_NAIL_MEASUREMENTS_TABLE=customer_nail_measurements
 
-ADMIN_EMAIL=admin@example.com
+ADMIN_NAME=admin
 ADMIN_PASSWORD=strong_password_here
 ADMIN_SESSION_SECRET=long_random_secret_here
 ```
@@ -98,7 +98,7 @@ https://nail-measure-pro.vercel.app/admin
 
 Admin can:
 
-- Log in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`.
+- Log in with `ADMIN_NAME` and `ADMIN_PASSWORD`.
 - Search a customer by exact email.
 - View that customer's saved sessions.
 - Edit each finger's millimeter value, nail size, and admin note.

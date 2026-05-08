@@ -31,30 +31,30 @@ export default async function handler(req, res) {
   }
 
   try {
-    const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+    const adminName = String(process.env.ADMIN_NAME || process.env.ADMIN_EMAIL || '').trim().toLowerCase();
     const adminPassword = String(process.env.ADMIN_PASSWORD || '');
     const adminSecret = String(process.env.ADMIN_SESSION_SECRET || '');
 
-    if (!adminEmail || !adminPassword || !adminSecret) {
+    if (!adminName || !adminPassword || !adminSecret) {
       res.status(200).json({
         ok: false,
         configured: false,
-        reason: 'Set ADMIN_EMAIL, ADMIN_PASSWORD, and ADMIN_SESSION_SECRET to enable admin login.',
+        reason: 'Set ADMIN_NAME, ADMIN_PASSWORD, and ADMIN_SESSION_SECRET to enable admin login.',
       });
       return;
     }
 
     const body = parseRequestBody(req.body);
-    const email = String(body.email || '').trim().toLowerCase();
+    const name = String(body.name || body.email || '').trim().toLowerCase();
     const password = String(body.password || '');
 
-    if (email !== adminEmail || password !== adminPassword) {
+    if (name !== adminName || password !== adminPassword) {
       res.status(401).json({ ok: false, configured: true, error: 'Invalid admin credentials' });
       return;
     }
 
     const expiresAt = Date.now() + TOKEN_TTL_MS;
-    const payload = base64UrlJson({ role: 'admin', email, exp: expiresAt });
+    const payload = base64UrlJson({ role: 'admin', name, exp: expiresAt });
     const token = `${payload}.${sign(payload, adminSecret)}`;
 
     res.status(200).json({
@@ -62,7 +62,8 @@ export default async function handler(req, res) {
       configured: true,
       token,
       expiresAt,
-      adminEmail: email,
+      adminName: name,
+      adminEmail: name,
     });
   } catch (error) {
     res.status(500).json({
