@@ -3,8 +3,8 @@ const DEFAULT_CONFIDENCE = process.env.ROBOFLOW_CONFIDENCE || '35';
 const DEFAULT_OVERLAP = process.env.ROBOFLOW_OVERLAP || '30';
 const MAX_BASE64_LENGTH = 7_000_000;
 
-const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.12 };
-const DEFAULT_NAIL_BOX = { x: 0.32, y: 0.48, w: 0.36, h: 0.35 };
+const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.15 };
+const DEFAULT_NAIL_BOX = { x: 0.275, y: 0.43625, w: 0.45, h: 0.4375 };
 
 const parseModelIds = (value) => (
   String(value || '')

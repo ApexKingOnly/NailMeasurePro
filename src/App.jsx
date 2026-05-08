@@ -11,8 +11,11 @@ const LEVEL_TOLERANCE_DEGREES = 8;
 const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.15 };
 const DEFAULT_NAIL_BOX = { x: 0.275, y: 0.43625, w: 0.45, h: 0.4375 };
 const AI_GUIDE_ENDPOINT = '/api/vision-detect';
+const TRAINING_LABEL_ENDPOINT = '/api/training-labels';
 const NAIL_EDGE_HANDLE_DROP = 112;
 const ASSIST_FRAME_ZOOM = 1.25;
+const APP_VERSION = 'training-labels-v1';
+const TRAINING_STATUS_IDLE = { status: 'idle', label: '' };
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -234,6 +237,26 @@ const requestAssistGuide = async ({ image, width, height, fingerName }) => {
   return response.json();
 };
 
+const requestTrainingLabelSave = async (payload) => {
+  const response = await fetch(TRAINING_LABEL_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('Training label endpoint unavailable');
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error || 'Training label save failed');
+  }
+
+  return data;
+};
+
 const getAssistMeasurement = (frame) => {
   if (!frame?.guide) return null;
 
@@ -252,6 +275,11 @@ const getAssistMeasurement = (frame) => {
     quarterPixels,
     nailPixels,
   };
+};
+
+const cloneJson = (value) => {
+  if (value === null || value === undefined) return null;
+  return JSON.parse(JSON.stringify(value));
 };
 
 const cloneAssistGuide = (guide) => {
@@ -276,7 +304,8 @@ const cloneAssistFrame = (frame, ai = frame?.ai) => {
     height: frame.height,
     zoom: frame.zoom || ASSIST_FRAME_ZOOM,
     guide,
-    ai: ai || { status: 'manual', label: 'MANUAL' },
+    ai: cloneJson(ai || { status: 'manual', label: 'MANUAL' }),
+    aiGuide: cloneJson(frame.aiGuide),
   };
 };
 
@@ -288,6 +317,44 @@ const getStoredMeasurement = (result) => {
     method: result.method || 'assist',
     quarterPixels: result.quarterPixels,
     nailPixels: result.nailPixels,
+  };
+};
+
+const createSessionId = () => (
+  window.crypto?.randomUUID?.() ||
+  `session-${Date.now()}-${Math.random().toString(36).slice(2)}`
+);
+
+const buildTrainingLabelPayload = ({ frame, measurement, fingerName, shotNumber, sessionId }) => {
+  const guide = cloneAssistGuide(frame?.guide);
+  if (!frame || !guide || !measurement) return null;
+
+  return {
+    sessionId,
+    fingerName,
+    shotNumber,
+    handSide: shotNumber <= 5 ? 'left' : 'right',
+    capturedAt: new Date().toISOString(),
+    image: frame.image,
+    frame: {
+      width: frame.width,
+      height: frame.height,
+      zoom: frame.zoom || ASSIST_FRAME_ZOOM,
+    },
+    guide,
+    ai: {
+      ...(cloneJson(frame.ai) || { status: 'manual', label: 'MANUAL' }),
+      suggestedGuide: cloneJson(frame.aiGuide),
+    },
+    measurement: {
+      mm: Number(measurement.mm),
+      size: String(measurement.size),
+      method: measurement.method || 'assist',
+      quarterPixels: measurement.quarterPixels,
+      nailPixels: measurement.nailPixels,
+    },
+    source: 'assist-correction',
+    appVersion: APP_VERSION,
   };
 };
 
@@ -316,6 +383,7 @@ function App() {
   const [shutterFlash, setShutterFlash] = useState(false)
   const [assistFrame, setAssistFrame] = useState(null)
   const [dragHandle, setDragHandle] = useState(null)
+  const [trainingStatus, setTrainingStatus] = useState(TRAINING_STATUS_IDLE)
   
   // Refs
   const videoRef = useRef(null)
@@ -334,9 +402,26 @@ function App() {
   const assistRequestRef = useRef(0)
   const dragOffsetRef = useRef({ x: 0, y: 0 })
   const isAdvancingRef = useRef(false)
+  const sessionIdRef = useRef(createSessionId())
+  const trainingStatusTimerRef = useRef(null)
 
   useEffect(() => { shotNumberRef.current = shotNumber }, [shotNumber])
   useEffect(() => { isStableSignalRef.current = isStableSignal }, [isStableSignal])
+  useEffect(() => () => {
+    if (trainingStatusTimerRef.current) clearTimeout(trainingStatusTimerRef.current);
+  }, [])
+
+  const showTrainingStatus = (nextStatus, timeoutMs = 3500) => {
+    if (trainingStatusTimerRef.current) clearTimeout(trainingStatusTimerRef.current);
+    setTrainingStatus(nextStatus);
+
+    if (timeoutMs > 0) {
+      trainingStatusTimerRef.current = window.setTimeout(() => {
+        setTrainingStatus(TRAINING_STATUS_IDLE);
+        trainingStatusTimerRef.current = null;
+      }, timeoutMs);
+    }
+  }
 
   // Launch Protocol
   const startWizard = () => {
@@ -353,6 +438,8 @@ function App() {
     setMeasurement(null)
     setAssistFrame(null)
     setDragHandle(null)
+    showTrainingStatus(TRAINING_STATUS_IDLE, 0)
+    sessionIdRef.current = createSessionId()
     isAdvancingRef.current = false
     setResults({})
     setMessage('Activating Hardware...')
@@ -402,6 +489,25 @@ function App() {
     } else {
       setMessage(`Place ${fingerName} in lower target`);
     }
+  }
+
+  const saveTrainingLabel = (payload) => {
+    if (!payload) return;
+
+    showTrainingStatus({ status: 'saving', label: 'SAVING LABEL' }, 0);
+    requestTrainingLabelSave(payload)
+      .then((result) => {
+        if (result?.ok) {
+          showTrainingStatus({ status: 'saved', label: 'LABEL SAVED' });
+        } else if (result?.configured === false) {
+          showTrainingStatus({ status: 'off', label: 'LABEL OFF' });
+        } else {
+          showTrainingStatus({ status: 'error', label: 'LABEL FAILED' });
+        }
+      })
+      .catch(() => {
+        showTrainingStatus({ status: 'error', label: 'LABEL FAILED' });
+      });
   }
 
   // Phase 0: Environment Lockdown (2s)
@@ -845,6 +951,7 @@ function App() {
   const advanceSequence = (nextMeasurement) => {
     if (isAdvancingRef.current) return;
     isAdvancingRef.current = true;
+    const acceptedFrame = cloneAssistFrame(assistFrame);
     const savedFrame = cloneAssistFrame(assistFrame, { status: 'saved', label: 'SAVED' });
 
     setAssistFrame(null);
@@ -863,6 +970,13 @@ function App() {
       : nextMeasurement;
 
     setResults(prev => ({ ...prev, [fingerName]: storedMeasurement }));
+    saveTrainingLabel(buildTrainingLabelPayload({
+      frame: acceptedFrame,
+      measurement: nextMeasurement,
+      fingerName,
+      shotNumber: currentShotNumber,
+      sessionId: sessionIdRef.current,
+    }));
     setIsStableSignal(false);
     isStableSignalRef.current = false;
     lastHandRef.current = null;
@@ -939,6 +1053,7 @@ function App() {
       height,
       zoom: ASSIST_FRAME_ZOOM,
       guide,
+      aiGuide: null,
       ai: { status: 'scanning', label: 'AI SCAN' },
     });
     setDragHandle(null);
@@ -958,11 +1073,21 @@ function App() {
       if (assistRequestRef.current !== requestId) return;
 
       if (aiResult?.guide && (aiResult.guide.quarter || aiResult.guide.nail)) {
-        setAssistFrame(prev => prev ? ({
-          ...prev,
-          guide: mergeAssistGuide(prev.guide, aiResult.guide, prev.width, prev.height),
-          ai: { status: 'suggested', label: 'AI GUIDE' },
-        }) : prev);
+        setAssistFrame(prev => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            guide: mergeAssistGuide(prev.guide, aiResult.guide, prev.width, prev.height),
+            aiGuide: cloneJson(aiResult.guide),
+            ai: {
+              status: 'suggested',
+              label: 'AI GUIDE',
+              configured: aiResult.configured !== false,
+              detections: aiResult.detections || null,
+              predictionCount: aiResult.predictionCount || 0,
+            },
+          };
+        });
         setMessage('AI guide ready; adjust if needed');
       } else {
         setAssistFrame(prev => prev ? ({
@@ -970,6 +1095,8 @@ function App() {
           ai: {
             status: aiResult?.configured === false ? 'off' : 'manual',
             label: aiResult?.configured === false ? 'AI OFF' : 'MANUAL',
+            configured: aiResult?.configured !== false,
+            reason: aiResult?.reason || null,
           },
         }) : prev);
         setMessage('Manual guide ready');
@@ -978,7 +1105,7 @@ function App() {
       if (assistRequestRef.current !== requestId) return;
       setAssistFrame(prev => prev ? ({
         ...prev,
-        ai: { status: 'manual', label: 'MANUAL' },
+        ai: { status: 'manual', label: 'MANUAL', error: error.message || 'AI guide unavailable' },
       }) : prev);
       setMessage('Manual guide ready');
     }
@@ -1104,6 +1231,13 @@ function App() {
      : assistAi.status === 'scanning'
         ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 animate-pulse'
         : 'bg-slate-900 text-slate-400 border-slate-800';
+  const trainingStatusClass = trainingStatus.status === 'saved'
+     ? 'bg-emerald-500/90 text-slate-950 border-emerald-300'
+     : trainingStatus.status === 'saving'
+        ? 'bg-cyan-500/20 text-cyan-100 border-cyan-500/45 animate-pulse'
+        : trainingStatus.status === 'error'
+           ? 'bg-rose-500/20 text-rose-100 border-rose-500/45'
+           : 'bg-slate-950/70 text-slate-500 border-slate-800';
   const renderAssistHandle = (handle, x, y, color) => (
      <g key={handle} onPointerDown={(event) => startAssistDrag(handle, event)} style={{ cursor: 'grab' }}>
         <circle cx={x} cy={y} r="30" fill="transparent" stroke="transparent" strokeWidth="1" />
@@ -1372,6 +1506,11 @@ function App() {
                    {label}
                 </span>
              ))}
+             {trainingStatus.status !== 'idle' && (
+                <span className={`px-2 py-1 rounded-full border text-[8px] font-black tracking-widest ${trainingStatusClass}`}>
+                   {trainingStatus.label}
+                </span>
+             )}
           </div>
 
           {isStableSignal && measurement && (

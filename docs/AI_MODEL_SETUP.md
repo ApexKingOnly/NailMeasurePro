@@ -50,6 +50,8 @@ Do not expose `ROBOFLOW_API_KEY` to Vite client env vars. Keep it server-side on
 5. Use the assisted guide corrections as high-quality labels.
 6. Keep manual assist in production even after AI lands.
 
+The app now has a human-in-the-loop capture endpoint for step 5. See `docs/TRAINING_DATA_SETUP.md` for the Supabase table, storage bucket, and Vercel env vars needed to store accepted guide corrections.
+
 ## Privacy Notes
 
 Roboflow free/Public workspaces can publish datasets/models publicly. Use only demo or public-safe images there. Real customer hand/nail images should use a private paid workspace or a private training pipeline.
