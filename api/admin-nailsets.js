@@ -1,62 +1,15 @@
-import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { parseRequestBody, verifyAdminToken } from './admin-auth.js';
 
 const DEFAULT_SESSIONS_TABLE = 'customer_nail_sessions';
 const DEFAULT_MEASUREMENTS_TABLE = 'customer_nail_measurements';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-const parseRequestBody = (body) => {
-  if (!body) return {};
-  if (typeof body === 'string') return JSON.parse(body);
-  return body;
-};
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 
 const toFiniteNumber = (value) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
-};
-
-const sign = (payload, secret) => (
-  crypto
-    .createHmac('sha256', secret)
-    .update(payload)
-    .digest('base64url')
-);
-
-const timingSafeEqualText = (left, right) => {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
-};
-
-const verifyAdmin = (req) => {
-  const secret = String(process.env.ADMIN_SESSION_SECRET || '');
-  if (!secret) return { ok: false, configured: false };
-
-  const auth = String(req.headers.authorization || req.headers.Authorization || '');
-  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
-  const [payload, signature] = token.split('.');
-  if (!payload || !signature) return { ok: false, status: 401, error: 'Admin login required' };
-
-  const expected = sign(payload, secret);
-  if (!timingSafeEqualText(signature, expected)) {
-    return { ok: false, status: 401, error: 'Invalid admin session' };
-  }
-
-  let claims;
-  try {
-    claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-  } catch (error) {
-    return { ok: false, status: 401, error: 'Invalid admin session' };
-  }
-
-  if (claims.role !== 'admin' || Number(claims.exp || 0) < Date.now()) {
-    return { ok: false, status: 401, error: 'Admin session expired' };
-  }
-
-  return { ok: true, name: claims.name || claims.email || 'admin' };
 };
 
 const getSupabaseConfig = () => {
@@ -84,7 +37,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const admin = verifyAdmin(req);
+  const admin = verifyAdminToken(req);
   if (!admin.ok) {
     res.status(admin.status || 200).json({
       ok: false,

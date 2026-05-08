@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ChevronRight, LogOut, Save, Search, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ChevronRight, LogOut, Power, Save, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 
 const ADMIN_TOKEN_KEY = 'nailmeasure_admin_token';
 const ADMIN_NAME_KEY = 'nailmeasure_admin_name';
@@ -44,6 +44,9 @@ function AdminPortal() {
   const [searchEmail, setSearchEmail] = useState('');
   const [sessions, setSessions] = useState([]);
   const [drafts, setDrafts] = useState({});
+  const [accounts, setAccounts] = useState([]);
+  const [newAccountName, setNewAccountName] = useState('');
+  const [newAccountPassword, setNewAccountPassword] = useState('');
   const [status, setStatus] = useState({ type: 'idle', text: '' });
   const [loading, setLoading] = useState(false);
 
@@ -55,8 +58,37 @@ function AdminPortal() {
     setAdminName('');
     setSessions([]);
     setDrafts({});
+    setAccounts([]);
     setStatus({ type: 'idle', text: '' });
   };
+
+  const loadAdminAccounts = async (authToken = token) => {
+    if (!authToken) return;
+
+    const response = await fetch('/api/admin-accounts', {
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
+    const data = await response.json();
+
+    if (response.status === 401) {
+      logout();
+      throw new Error(data.error || 'Admin session expired');
+    }
+
+    if (!response.ok || !data.ok) {
+      throw new Error(data.reason || data.error || 'Admin account load failed');
+    }
+
+    setAccounts(data.accounts || []);
+  };
+
+  useEffect(() => {
+    if (!token) return;
+
+    loadAdminAccounts(token).catch((error) => {
+      setStatus({ type: 'error', text: error.message });
+    });
+  }, []);
 
   const login = async (event) => {
     event.preventDefault();
@@ -80,7 +112,79 @@ function AdminPortal() {
       setStoredValue(ADMIN_TOKEN_KEY, data.token);
       setStoredValue(ADMIN_NAME_KEY, data.adminName || loginName);
       setPassword('');
+      await loadAdminAccounts(data.token);
       setStatus({ type: 'success', text: 'Admin signed in' });
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createAdminAccount = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setStatus({ type: 'loading', text: 'Creating admin account' });
+
+    try {
+      const response = await fetch('/api/admin-accounts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name: newAccountName, password: newAccountPassword }),
+      });
+      const data = await response.json();
+
+      if (response.status === 401) {
+        logout();
+        throw new Error(data.error || 'Admin session expired');
+      }
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'Admin account create failed');
+      }
+
+      setAccounts(prev => [...prev, data.account]);
+      setNewAccountName('');
+      setNewAccountPassword('');
+      setStatus({ type: 'success', text: 'Admin account created' });
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleAdminAccount = async (account) => {
+    setLoading(true);
+    setStatus({ type: 'loading', text: account.active ? 'Disabling admin account' : 'Enabling admin account' });
+
+    try {
+      const response = await fetch('/api/admin-accounts', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ accountId: account.id, active: !account.active }),
+      });
+      const data = await response.json();
+
+      if (response.status === 401) {
+        logout();
+        throw new Error(data.error || 'Admin session expired');
+      }
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'Admin account update failed');
+      }
+
+      setAccounts(prev => prev.map(item => (
+        item.id === data.account.id ? data.account : item
+      )));
+      setStatus({ type: 'success', text: data.account.active ? 'Admin account enabled' : 'Admin account disabled' });
     } catch (error) {
       setStatus({ type: 'error', text: error.message });
     } finally {
@@ -254,6 +358,84 @@ function AdminPortal() {
             <LogOut className="w-4 h-4" /> Logout
           </button>
         </header>
+
+        <section className="border border-slate-800 bg-slate-900/45 rounded-3xl overflow-hidden mb-6">
+          <div className="p-5 border-b border-slate-800 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+              <Users className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-[10px] text-emerald-400 font-black tracking-widest uppercase">Access</p>
+              <h2 className="text-lg font-black text-white">Admin Accounts</h2>
+            </div>
+          </div>
+
+          <form onSubmit={createAdminAccount} className="p-5 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3 border-b border-slate-800">
+            <input
+              type="text"
+              value={newAccountName}
+              onChange={(event) => setNewAccountName(event.target.value)}
+              placeholder="admin-name"
+              className="h-12 bg-black/40 border border-slate-800 rounded-2xl px-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70"
+              autoComplete="off"
+            />
+            <input
+              type="password"
+              value={newAccountPassword}
+              onChange={(event) => setNewAccountPassword(event.target.value)}
+              placeholder="temporary password"
+              className="h-12 bg-black/40 border border-slate-800 rounded-2xl px-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70"
+              autoComplete="new-password"
+            />
+            <button
+              disabled={loading}
+              className="h-12 px-5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95"
+            >
+              <UserPlus className="w-4 h-4" /> Create
+            </button>
+          </form>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-left">
+              <thead className="text-[9px] uppercase tracking-widest text-slate-500 bg-black/25">
+                <tr>
+                  <th className="px-4 py-3">Name</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Last Login</th>
+                  <th className="px-4 py-3">Created By</th>
+                  <th className="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {accounts.map(account => (
+                  <tr key={account.id} className="border-t border-slate-800/80">
+                    <td className="px-4 py-3">
+                      <div className="font-black text-sm">{account.adminName}</div>
+                      <div className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{account.role}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest border ${account.active ? 'border-emerald-500/35 text-emerald-300 bg-emerald-500/10' : 'border-slate-700 text-slate-500 bg-slate-950/60'}`}>
+                        {account.active ? 'Active' : 'Disabled'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-400 font-bold">{formatDate(account.lastLoginAt)}</td>
+                    <td className="px-4 py-3 text-xs text-slate-400 font-bold">{account.createdBy || 'System'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => toggleAdminAccount(account)}
+                        disabled={loading || account.adminName === adminName}
+                        className="h-10 px-4 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-2 active:scale-95 disabled:opacity-40"
+                      >
+                        <Power className="w-4 h-4" /> {account.active ? 'Disable' : 'Enable'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <form onSubmit={search} className="flex flex-col sm:flex-row gap-3 mb-5">
           <input

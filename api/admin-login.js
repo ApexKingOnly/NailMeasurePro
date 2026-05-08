@@ -1,21 +1,32 @@
-import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
+import {
+  createAdminToken,
+  getAdminAccountConfig,
+  normalizeAdminName,
+  parseRequestBody,
+  verifyPassword,
+} from './admin-auth.js';
 
-const TOKEN_TTL_MS = 12 * 60 * 60 * 1000;
+const getEnvAdmin = () => ({
+  name: normalizeAdminName(process.env.ADMIN_NAME || process.env.ADMIN_EMAIL),
+  password: String(process.env.ADMIN_PASSWORD || ''),
+});
 
-const parseRequestBody = (body) => {
-  if (!body) return {};
-  if (typeof body === 'string') return JSON.parse(body);
-  return body;
+const loginWithEnvAdmin = ({ name, password, secret }) => {
+  const envAdmin = getEnvAdmin();
+  if (!envAdmin.name || !envAdmin.password) return null;
+  if (name !== envAdmin.name || password !== envAdmin.password) return null;
+
+  const session = createAdminToken({ name: envAdmin.name, role: 'admin' }, secret);
+  return {
+    ok: true,
+    configured: true,
+    source: 'env',
+    adminName: envAdmin.name,
+    adminEmail: envAdmin.name,
+    ...session,
+  };
 };
-
-const base64UrlJson = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
-
-const sign = (payload, secret) => (
-  crypto
-    .createHmac('sha256', secret)
-    .update(payload)
-    .digest('base64url')
-);
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
@@ -31,40 +42,79 @@ export default async function handler(req, res) {
   }
 
   try {
-    const adminName = String(process.env.ADMIN_NAME || process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-    const adminPassword = String(process.env.ADMIN_PASSWORD || '');
     const adminSecret = String(process.env.ADMIN_SESSION_SECRET || '');
 
-    if (!adminName || !adminPassword || !adminSecret) {
+    if (!adminSecret) {
       res.status(200).json({
         ok: false,
         configured: false,
-        reason: 'Set ADMIN_NAME, ADMIN_PASSWORD, and ADMIN_SESSION_SECRET to enable admin login.',
+        reason: 'Set ADMIN_SESSION_SECRET to enable admin login.',
       });
       return;
     }
 
     const body = parseRequestBody(req.body);
-    const name = String(body.name || body.email || '').trim().toLowerCase();
+    const name = normalizeAdminName(body.name || body.email);
     const password = String(body.password || '');
+    const accountConfig = getAdminAccountConfig();
 
-    if (name !== adminName || password !== adminPassword) {
-      res.status(401).json({ ok: false, configured: true, error: 'Invalid admin credentials' });
+    if (!name || !password) {
+      res.status(400).json({ ok: false, configured: true, error: 'Admin name and password are required' });
       return;
     }
 
-    const expiresAt = Date.now() + TOKEN_TTL_MS;
-    const payload = base64UrlJson({ role: 'admin', name, exp: expiresAt });
-    const token = `${payload}.${sign(payload, adminSecret)}`;
+    if (accountConfig.configured) {
+      const supabase = createClient(accountConfig.url, accountConfig.serviceRoleKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const result = await supabase
+        .from(accountConfig.table)
+        .select('*')
+        .eq('admin_name_normalized', name)
+        .eq('active', true)
+        .maybeSingle();
 
-    res.status(200).json({
-      ok: true,
-      configured: true,
-      token,
-      expiresAt,
-      adminName: name,
-      adminEmail: name,
-    });
+      if (result.error) {
+        const envLogin = loginWithEnvAdmin({ name, password, secret: adminSecret });
+        if (envLogin) {
+          res.status(200).json(envLogin);
+          return;
+        }
+
+        throw new Error(`Admin account lookup failed: ${result.error.message}`);
+      }
+
+      if (result.data) {
+        if (!verifyPassword(password, result.data.password_hash)) {
+          res.status(401).json({ ok: false, configured: true, error: 'Invalid admin credentials' });
+          return;
+        }
+
+        await supabase
+          .from(accountConfig.table)
+          .update({ last_login_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+          .eq('id', result.data.id);
+
+        const session = createAdminToken({ name: result.data.admin_name_normalized, role: result.data.role }, adminSecret);
+        res.status(200).json({
+          ok: true,
+          configured: true,
+          source: 'database',
+          adminName: result.data.admin_name,
+          adminEmail: result.data.admin_name,
+          ...session,
+        });
+        return;
+      }
+    }
+
+    const envLogin = loginWithEnvAdmin({ name, password, secret: adminSecret });
+    if (envLogin) {
+      res.status(200).json(envLogin);
+      return;
+    }
+
+    res.status(401).json({ ok: false, configured: accountConfig.configured, error: 'Invalid admin credentials' });
   } catch (error) {
     res.status(500).json({
       ok: false,

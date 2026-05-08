@@ -30,12 +30,14 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 CUSTOMER_NAIL_SESSIONS_TABLE=customer_nail_sessions
 CUSTOMER_NAIL_MEASUREMENTS_TABLE=customer_nail_measurements
 
+ADMIN_ACCOUNTS_TABLE=admin_accounts
 ADMIN_NAME=admin
-ADMIN_PASSWORD=strong_password_here
+ADMIN_PASSWORD=strong_bootstrap_password_here
 ADMIN_SESSION_SECRET=long_random_secret_here
 ```
 
 `ADMIN_SESSION_SECRET` should be a long random string. It is used to sign admin sessions.
+`ADMIN_NAME` and `ADMIN_PASSWORD` are a bootstrap fallback. In production, the preferred path is admin accounts in Supabase.
 
 ## Supabase SQL
 
@@ -82,8 +84,26 @@ create table if not exists public.customer_nail_measurements (
 create index if not exists customer_nail_measurements_session_idx
   on public.customer_nail_measurements (session_id, shot_number);
 
+create table if not exists public.admin_accounts (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  admin_name text not null,
+  admin_name_normalized text not null unique,
+  password_hash text not null,
+  role text not null default 'admin',
+  active boolean not null default true,
+  created_by text,
+  last_login_at timestamptz,
+  password_changed_at timestamptz not null default now()
+);
+
+create index if not exists admin_accounts_active_idx
+  on public.admin_accounts (admin_name_normalized, active);
+
 alter table public.customer_nail_sessions enable row level security;
 alter table public.customer_nail_measurements enable row level security;
+alter table public.admin_accounts enable row level security;
 ```
 
 The Vercel functions use the Supabase service role key, so browser users and admins never receive database credentials.
@@ -99,10 +119,12 @@ https://nail-measure-pro.vercel.app/admin
 Admin can:
 
 - Log in with `ADMIN_NAME` and `ADMIN_PASSWORD`.
+- Create additional admin accounts with admin name and password.
+- Disable other admin accounts.
 - Search a customer by exact email.
 - View that customer's saved sessions.
 - Edit each finger's millimeter value, nail size, and admin note.
 
 ## Notes
 
-This is a pragmatic admin login, not a full multi-admin account system. Later, this can be upgraded to Supabase Auth roles or a dedicated admin users table.
+This is a pragmatic admin account system backed by Supabase and server-only API routes. Later, this can be upgraded to Supabase Auth roles if full password reset and audit workflows are needed.
