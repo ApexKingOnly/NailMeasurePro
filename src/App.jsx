@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Camera, ShieldAlert, Scan, CheckCircle2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Camera, ShieldAlert, Scan, CheckCircle2, ChevronLeft, ChevronRight, Mail } from 'lucide-react'
 import { getFullSizing, calculateFingerWidthPixels, calculateMM, mmToNailSize } from './utils/sizing'
+import AdminPortal from './AdminPortal.jsx'
 
 // V30: Explicit 10-Finger Sequence Mapping
 // L-Pinky(20), L-Ring(16), L-Mid(12), L-Index(8), L-Thumb(4)
@@ -12,10 +13,13 @@ const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.15 };
 const DEFAULT_NAIL_BOX = { x: 0.275, y: 0.43625, w: 0.45, h: 0.4375 };
 const AI_GUIDE_ENDPOINT = '/api/vision-detect';
 const TRAINING_LABEL_ENDPOINT = '/api/training-labels';
+const CUSTOMER_NAILSET_ENDPOINT = '/api/customer-nailsets';
 const NAIL_EDGE_HANDLE_DROP = 112;
 const ASSIST_FRAME_ZOOM = 1.25;
 const APP_VERSION = 'training-labels-v1';
 const TRAINING_STATUS_IDLE = { status: 'idle', label: '' };
+const CUSTOMER_SAVE_STATUS_IDLE = { status: 'idle', label: '' };
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -257,6 +261,26 @@ const requestTrainingLabelSave = async (payload) => {
   return data;
 };
 
+const requestCustomerNailsetSave = async (payload) => {
+  const response = await fetch(CUSTOMER_NAILSET_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('Customer nail set endpoint unavailable');
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error || 'Customer nail set save failed');
+  }
+
+  return data;
+};
+
 const getAssistMeasurement = (frame) => {
   if (!frame?.guide) return null;
 
@@ -325,6 +349,24 @@ const createSessionId = () => (
   `session-${Date.now()}-${Math.random().toString(36).slice(2)}`
 );
 
+const getStoredCustomerEmail = () => {
+  try {
+    return window.localStorage?.getItem('nailmeasure_customer_email') || '';
+  } catch (error) {
+    return '';
+  }
+};
+
+const storeCustomerEmail = (email) => {
+  try {
+    window.localStorage?.setItem('nailmeasure_customer_email', email);
+  } catch (error) {
+    // Local storage is only for convenience.
+  }
+};
+
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
 const buildTrainingLabelPayload = ({ frame, measurement, fingerName, shotNumber, sessionId }) => {
   const guide = cloneAssistGuide(frame?.guide);
   if (!frame || !guide || !measurement) return null;
@@ -358,7 +400,47 @@ const buildTrainingLabelPayload = ({ frame, measurement, fingerName, shotNumber,
   };
 };
 
+const buildCustomerNailsetPayload = ({ customerEmail, sessionId, results, steps, status }) => {
+  const normalizedEmail = normalizeEmail(customerEmail);
+  if (!EMAIL_PATTERN.test(normalizedEmail)) return null;
+
+  const measurements = steps
+    .map((fingerName, index) => {
+      const result = results[fingerName];
+      if (!result?.mm || !result?.size) return null;
+      const shotNumber = index + 1;
+
+      return {
+        fingerName,
+        shotNumber,
+        handSide: shotNumber <= 5 ? 'left' : 'right',
+        mm: Number(result.mm),
+        size: String(result.size),
+        method: result.method || 'assist',
+        quarterPixels: result.quarterPixels,
+        nailPixels: result.nailPixels,
+        guide: cloneAssistGuide(result.frame?.guide),
+      };
+    })
+    .filter(Boolean);
+
+  if (!measurements.length) return null;
+
+  return {
+    sessionId,
+    customerEmail: normalizedEmail,
+    status,
+    measurements,
+    source: 'customer-measurement-flow',
+    appVersion: APP_VERSION,
+  };
+};
+
 function App() {
+  if (window.location.pathname.startsWith('/admin')) {
+    return <AdminPortal />;
+  }
+
   // Navigation State
   const [currentStep, setCurrentStep] = useState('welcome')
   const [shotNumber, setShotNumber] = useState(1)
@@ -366,6 +448,7 @@ function App() {
     "Left Pinky", "Left Ring", "Left Middle", "Left Pointer", "Left Thumb",
     "Right Thumb", "Right Pointer", "Right Middle", "Right Ring", "Right Pinky"
   ]
+  const [customerEmail, setCustomerEmail] = useState(getStoredCustomerEmail)
   
   // Vision Health & Stability
   const [systemBooting, setSystemBooting] = useState(true)
@@ -384,6 +467,7 @@ function App() {
   const [assistFrame, setAssistFrame] = useState(null)
   const [dragHandle, setDragHandle] = useState(null)
   const [trainingStatus, setTrainingStatus] = useState(TRAINING_STATUS_IDLE)
+  const [customerSaveStatus, setCustomerSaveStatus] = useState(CUSTOMER_SAVE_STATUS_IDLE)
   
   // Refs
   const videoRef = useRef(null)
@@ -403,12 +487,15 @@ function App() {
   const dragOffsetRef = useRef({ x: 0, y: 0 })
   const isAdvancingRef = useRef(false)
   const sessionIdRef = useRef(createSessionId())
+  const customerSessionIdRef = useRef(createSessionId())
   const trainingStatusTimerRef = useRef(null)
+  const customerSaveTimerRef = useRef(null)
 
   useEffect(() => { shotNumberRef.current = shotNumber }, [shotNumber])
   useEffect(() => { isStableSignalRef.current = isStableSignal }, [isStableSignal])
   useEffect(() => () => {
     if (trainingStatusTimerRef.current) clearTimeout(trainingStatusTimerRef.current);
+    if (customerSaveTimerRef.current) clearTimeout(customerSaveTimerRef.current);
   }, [])
 
   const showTrainingStatus = (nextStatus, timeoutMs = 3500) => {
@@ -423,12 +510,31 @@ function App() {
     }
   }
 
+  const showCustomerSaveStatus = (nextStatus, timeoutMs = 3500) => {
+    if (customerSaveTimerRef.current) clearTimeout(customerSaveTimerRef.current);
+    setCustomerSaveStatus(nextStatus);
+
+    if (timeoutMs > 0) {
+      customerSaveTimerRef.current = window.setTimeout(() => {
+        setCustomerSaveStatus(CUSTOMER_SAVE_STATUS_IDLE);
+        customerSaveTimerRef.current = null;
+      }, timeoutMs);
+    }
+  }
+
   // Launch Protocol
   const startWizard = () => {
+    const normalizedEmail = normalizeEmail(customerEmail);
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+       alert("Enter a valid email address to start.");
+       return;
+    }
     if (window.innerWidth <= 10) {
        alert("Viewport too small/stalled. Please resize or refresh.");
        return; 
     }
+    setCustomerEmail(normalizedEmail)
+    storeCustomerEmail(normalizedEmail)
     setShotNumber(1)
     setCurrentStep('wizard')
     setIsCameraReady(false)
@@ -439,7 +545,9 @@ function App() {
     setAssistFrame(null)
     setDragHandle(null)
     showTrainingStatus(TRAINING_STATUS_IDLE, 0)
+    showCustomerSaveStatus(CUSTOMER_SAVE_STATUS_IDLE, 0)
     sessionIdRef.current = createSessionId()
+    customerSessionIdRef.current = createSessionId()
     isAdvancingRef.current = false
     setResults({})
     setMessage('Activating Hardware...')
@@ -507,6 +615,32 @@ function App() {
       })
       .catch(() => {
         showTrainingStatus({ status: 'error', label: 'LABEL FAILED' });
+      });
+  }
+
+  const saveCustomerNailset = (nextResults, status = 'draft') => {
+    const payload = buildCustomerNailsetPayload({
+      customerEmail,
+      sessionId: customerSessionIdRef.current,
+      results: nextResults,
+      steps,
+      status,
+    });
+    if (!payload) return;
+
+    showCustomerSaveStatus({ status: 'saving', label: 'SAVING SIZES' }, 0);
+    requestCustomerNailsetSave(payload)
+      .then((result) => {
+        if (result?.ok) {
+          showCustomerSaveStatus({ status: 'saved', label: status === 'complete' ? 'SET SAVED' : 'SIZES SAVED' });
+        } else if (result?.configured === false) {
+          showCustomerSaveStatus({ status: 'off', label: 'SAVE OFF' });
+        } else {
+          showCustomerSaveStatus({ status: 'error', label: 'SAVE FAILED' });
+        }
+      })
+      .catch(() => {
+        showCustomerSaveStatus({ status: 'error', label: 'SAVE FAILED' });
       });
   }
 
@@ -968,8 +1102,11 @@ function App() {
     const storedMeasurement = savedFrame
       ? { ...nextMeasurement, frame: savedFrame }
       : nextMeasurement;
+    const nextResults = { ...results, [fingerName]: storedMeasurement };
+    const customerSetStatus = steps.every(step => nextResults[step]?.mm && nextResults[step]?.size) ? 'complete' : 'draft';
 
-    setResults(prev => ({ ...prev, [fingerName]: storedMeasurement }));
+    setResults(nextResults);
+    saveCustomerNailset(nextResults, customerSetStatus);
     saveTrainingLabel(buildTrainingLabelPayload({
       frame: acceptedFrame,
       measurement: nextMeasurement,
@@ -993,7 +1130,7 @@ function App() {
     if (currentShotNumber < steps.length) {
       const nextShotNumber = currentShotNumber + 1;
       const nextFingerName = steps[nextShotNumber - 1];
-      const nextSavedResult = results[nextFingerName];
+      const nextSavedResult = nextResults[nextFingerName];
       const nextSavedFrame = cloneAssistFrame(nextSavedResult?.frame, { status: 'saved', label: 'SAVED' });
       const nextSavedMeasurement = getStoredMeasurement(nextSavedResult);
 
@@ -1238,6 +1375,13 @@ function App() {
         : trainingStatus.status === 'error'
            ? 'bg-rose-500/20 text-rose-100 border-rose-500/45'
            : 'bg-slate-950/70 text-slate-500 border-slate-800';
+  const customerSaveStatusClass = customerSaveStatus.status === 'saved'
+     ? 'bg-emerald-500/90 text-slate-950 border-emerald-300'
+     : customerSaveStatus.status === 'saving'
+        ? 'bg-cyan-500/20 text-cyan-100 border-cyan-500/45 animate-pulse'
+        : customerSaveStatus.status === 'error'
+           ? 'bg-rose-500/20 text-rose-100 border-rose-500/45'
+           : 'bg-slate-950/70 text-slate-500 border-slate-800';
   const renderAssistHandle = (handle, x, y, color) => (
      <g key={handle} onPointerDown={(event) => startAssistDrag(handle, event)} style={{ cursor: 'grab' }}>
         <circle cx={x} cy={y} r="30" fill="transparent" stroke="transparent" strokeWidth="1" />
@@ -1382,6 +1526,21 @@ function App() {
              ))}
           </ul>
        </div>
+
+       <div className="w-full max-w-sm mb-5">
+          <label className="block text-[10px] text-slate-500 font-black tracking-widest uppercase mb-2">CUSTOMER EMAIL</label>
+          <div className="relative">
+             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" />
+             <input
+                type="email"
+                value={customerEmail}
+                onChange={(event) => setCustomerEmail(event.target.value)}
+                placeholder="customer@email.com"
+                className="w-full h-14 bg-slate-900/70 border border-slate-800 rounded-2xl pl-11 pr-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70"
+                autoComplete="email"
+             />
+          </div>
+       </div>
        
        <button 
           onClick={startWizard}
@@ -1389,6 +1548,13 @@ function App() {
           className={`w-full max-w-sm py-6 rounded-3xl font-black text-xl tracking-tighter shadow-2xl transition-all active:scale-95 ${systemBooting ? 'bg-slate-800 text-slate-500 grayscale' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/30 ring-4 ring-emerald-500/10'}`}
        >
           {systemBooting ? 'SYSTEM BOOTING...' : 'INITIALIZE PRECISION GRID'}
+       </button>
+
+       <button
+          onClick={() => { window.location.href = '/admin'; }}
+          className="mt-5 text-[10px] font-black tracking-widest uppercase text-slate-600 hover:text-emerald-400"
+       >
+          ADMIN
        </button>
     </div>
   )
@@ -1509,6 +1675,11 @@ function App() {
              {trainingStatus.status !== 'idle' && (
                 <span className={`px-2 py-1 rounded-full border text-[8px] font-black tracking-widest ${trainingStatusClass}`}>
                    {trainingStatus.label}
+                </span>
+             )}
+             {customerSaveStatus.status !== 'idle' && (
+                <span className={`px-2 py-1 rounded-full border text-[8px] font-black tracking-widest ${customerSaveStatusClass}`}>
+                   {customerSaveStatus.label}
                 </span>
              )}
           </div>

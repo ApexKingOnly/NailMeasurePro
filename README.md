@@ -33,6 +33,7 @@ A high-precision mobile web application for press-on nail sizing using OpenCV.js
 - **Sizing**: Includes a 1.0mm buffer for nail curvature.
 - **AI Guide Bridge**: Optional `/api/vision-detect` endpoint can call a Roboflow model to suggest quarter and nail guide geometry on frozen assist frames. See `docs/AI_MODEL_SETUP.md`.
 - **Training Labels**: Accepted assisted measurements can be saved as human-corrected training examples through `/api/training-labels`. See `docs/TRAINING_DATA_SETUP.md`.
+- **Customer/Admin Records**: Customer measurements can be saved by email and reviewed or edited in `/admin`. See `docs/CUSTOMER_ADMIN_SETUP.md`.
 
 ## Admin Features
 Access the `/admin` route (mocked in the current demo) to view incoming orders and verify AI detections.
