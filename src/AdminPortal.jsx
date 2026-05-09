@@ -6,6 +6,12 @@ const ADMIN_TOKEN_KEY = 'nailmeasure_admin_token';
 const ADMIN_NAME_KEY = 'nailmeasure_admin_name';
 const LEGACY_ADMIN_EMAIL_KEY = 'nailmeasure_admin_email';
 const DEFAULT_ADMIN_NAME = 'admin';
+const ADMIN_GUIDE_COLORS = {
+  coin: '#c9a56a',
+  coinRadius: '#c9b4dc',
+  nail: '#fff8ee',
+  nailAccent: '#e8b7b3',
+};
 
 const getStoredValue = (key) => {
   try {
@@ -462,7 +468,7 @@ function AdminPortal() {
 
     if (!measurement.signed_image_url || !frame?.width || !frame?.height || !guide?.quarter || !guide?.nail) {
       return (
-        <div className="w-64 min-h-36 bg-black/40 border border-slate-800 rounded-2xl flex items-center justify-center px-4 text-center text-[10px] text-slate-500 font-black uppercase tracking-widest">
+        <div className="brand-tile w-64 min-h-36 flex items-center justify-center px-4 text-center text-[10px] brand-eyebrow font-black uppercase tracking-widest">
           No saved photo
         </div>
       );
@@ -505,21 +511,21 @@ function AdminPortal() {
             onPointerUp={stopGuideDrag}
             onPointerCancel={stopGuideDrag}
           >
-            <circle cx={quarter.x} cy={quarter.y} r={quarter.r} fill="rgba(16,185,129,0.04)" stroke="#10b981" strokeWidth="2.5" strokeDasharray="12 10" />
-            <line x1={quarter.x - 10} y1={quarter.y} x2={quarter.x + 10} y2={quarter.y} stroke="#10b981" strokeWidth="2" />
-            <line x1={quarter.x} y1={quarter.y - 10} x2={quarter.x} y2={quarter.y + 10} stroke="#10b981" strokeWidth="2" />
-            <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#f8fafc" strokeWidth="5" strokeLinecap="round" opacity="0.35" />
-            <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#10b981" strokeWidth="2.25" strokeLinecap="round" strokeDasharray="7 6" />
+            <circle cx={quarter.x} cy={quarter.y} r={quarter.r} fill="rgba(201,165,106,0.04)" stroke={ADMIN_GUIDE_COLORS.coin} strokeWidth="2.5" strokeDasharray="12 10" />
+            <line x1={quarter.x - 10} y1={quarter.y} x2={quarter.x + 10} y2={quarter.y} stroke={ADMIN_GUIDE_COLORS.coin} strokeWidth="2" />
+            <line x1={quarter.x} y1={quarter.y - 10} x2={quarter.x} y2={quarter.y + 10} stroke={ADMIN_GUIDE_COLORS.coin} strokeWidth="2" />
+            <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke={ADMIN_GUIDE_COLORS.nail} strokeWidth="5" strokeLinecap="round" opacity="0.35" />
+            <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke={ADMIN_GUIDE_COLORS.nailAccent} strokeWidth="2.25" strokeLinecap="round" strokeDasharray="7 6" />
 
-            <circle cx={quarter.x} cy={quarter.y} r="18" fill="rgba(16,185,129,0.01)" stroke="#10b981" strokeWidth="2" {...handleProps('quarter')} />
-            <circle cx={radiusHandle.x} cy={radiusHandle.y} r="16" fill="rgba(34,211,238,0.01)" stroke="#22d3ee" strokeWidth="2" {...handleProps('quarterRadius')} />
-            <line x1={nail.left.x} y1={nail.left.y - 60} x2={nail.left.x} y2={nail.left.y + 112} stroke="#f8fafc" strokeWidth="2" strokeDasharray="8 7" opacity="0.9" {...handleProps('nailLeft')} />
-            <line x1={nail.right.x} y1={nail.right.y - 60} x2={nail.right.x} y2={nail.right.y + 112} stroke="#f8fafc" strokeWidth="2" strokeDasharray="8 7" opacity="0.9" {...handleProps('nailRight')} />
-            <circle cx={nail.left.x} cy={nail.left.y} r="18" fill="rgba(248,250,252,0.01)" stroke="#f8fafc" strokeWidth="2" {...handleProps('nailLeft')} />
-            <circle cx={nail.right.x} cy={nail.right.y} r="18" fill="rgba(248,250,252,0.01)" stroke="#f8fafc" strokeWidth="2" {...handleProps('nailRight')} />
+            <circle cx={quarter.x} cy={quarter.y} r="18" fill="rgba(201,165,106,0.01)" stroke={ADMIN_GUIDE_COLORS.coin} strokeWidth="2" {...handleProps('quarter')} />
+            <circle cx={radiusHandle.x} cy={radiusHandle.y} r="16" fill="rgba(201,180,220,0.01)" stroke={ADMIN_GUIDE_COLORS.coinRadius} strokeWidth="2" {...handleProps('quarterRadius')} />
+            <line x1={nail.left.x} y1={nail.left.y - 60} x2={nail.left.x} y2={nail.left.y + 112} stroke={ADMIN_GUIDE_COLORS.nail} strokeWidth="2" strokeDasharray="8 7" opacity="0.9" {...handleProps('nailLeft')} />
+            <line x1={nail.right.x} y1={nail.right.y - 60} x2={nail.right.x} y2={nail.right.y + 112} stroke={ADMIN_GUIDE_COLORS.nail} strokeWidth="2" strokeDasharray="8 7" opacity="0.9" {...handleProps('nailRight')} />
+            <circle cx={nail.left.x} cy={nail.left.y} r="18" fill="rgba(255,248,238,0.01)" stroke={ADMIN_GUIDE_COLORS.nail} strokeWidth="2" {...handleProps('nailLeft')} />
+            <circle cx={nail.right.x} cy={nail.right.y} r="18" fill="rgba(255,248,238,0.01)" stroke={ADMIN_GUIDE_COLORS.nail} strokeWidth="2" {...handleProps('nailRight')} />
           </svg>
         </div>
-        <div className={`mt-2 text-[10px] font-black uppercase tracking-widest ${isDragging ? 'text-emerald-300' : 'text-slate-500'}`}>
+        <div className={`mt-2 text-[10px] font-black uppercase tracking-widest ${isDragging ? 'brand-accent' : 'brand-eyebrow'}`}>
           {measured ? `${measured.mm}mm / size ${measured.size}` : 'Adjust guides'}
         </div>
       </div>
@@ -527,36 +533,37 @@ function AdminPortal() {
   };
 
   const statusClass = status.type === 'success'
-    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+    ? 'brand-status-success'
     : status.type === 'error'
-      ? 'border-rose-500/40 bg-rose-500/10 text-rose-100'
-      : 'border-slate-800 bg-slate-900/70 text-slate-400';
+      ? 'brand-status-error'
+      : 'brand-status-neutral';
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
-        <form onSubmit={login} className="w-full max-w-sm bg-slate-900/60 border border-slate-800 rounded-3xl p-7 shadow-2xl">
-          <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl flex items-center justify-center mb-6">
-            <ShieldCheck className="w-7 h-7 text-emerald-400" />
+      <div className="brand-shell min-h-screen flex items-center justify-center p-6">
+        <form onSubmit={login} className="brand-panel w-full max-w-sm p-7 shadow-2xl">
+          <div className="brand-icon-card w-14 h-14 flex items-center justify-center mb-6">
+            <ShieldCheck className="w-7 h-7 brand-accent" />
           </div>
-          <h1 className="text-2xl font-black uppercase italic tracking-tight mb-2">Admin Login</h1>
-          <p className="text-[10px] text-slate-500 font-black tracking-widest uppercase mb-8">Nail set review console</p>
+          <div className="brand-wordmark-small text-4xl mb-1">Nails By Liz</div>
+          <h1 className="text-2xl font-black uppercase brand-heading mb-2">Admin Login</h1>
+          <p className="brand-eyebrow text-[10px] font-black tracking-widest uppercase mb-8">Nail set review console</p>
 
-          <label className="block text-[10px] text-slate-500 font-black tracking-widest uppercase mb-2">Admin Name</label>
+          <label className="block text-[10px] brand-eyebrow font-black tracking-widest uppercase mb-2">Admin Name</label>
           <input
             type="text"
             value={loginName}
             onChange={(event) => setLoginName(event.target.value)}
-            className="w-full h-14 bg-black/40 border border-slate-800 rounded-2xl px-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70 mb-4"
+            className="brand-input w-full h-14 border px-4 text-sm font-bold outline-none mb-4"
             autoComplete="username"
           />
 
-          <label className="block text-[10px] text-slate-500 font-black tracking-widest uppercase mb-2">Password</label>
+          <label className="block text-[10px] brand-eyebrow font-black tracking-widest uppercase mb-2">Password</label>
           <input
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="w-full h-14 bg-black/40 border border-slate-800 rounded-2xl px-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70 mb-5"
+            className="brand-input w-full h-14 border px-4 text-sm font-bold outline-none mb-5"
             autoComplete="current-password"
           />
 
@@ -568,7 +575,7 @@ function AdminPortal() {
 
           <button
             disabled={loading}
-            className="w-full h-14 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 rounded-2xl font-black uppercase tracking-widest text-xs active:scale-95 transition-all flex items-center justify-center gap-2"
+            className="brand-primary w-full h-14 rounded-2xl font-black uppercase tracking-widest text-xs active:scale-95 transition-all flex items-center justify-center gap-2"
           >
             <ChevronRight className="w-4 h-4" /> Sign In
           </button>
@@ -578,40 +585,41 @@ function AdminPortal() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-4 sm:p-8">
+    <div className="brand-admin-shell p-4 sm:p-8">
       <div className="mx-auto max-w-6xl">
-        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 border-b border-slate-900 pb-6">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 border-b brand-divider pb-6">
           <div>
-            <p className="text-[10px] text-emerald-400 font-black tracking-widest uppercase mb-2">Admin Console</p>
-            <h1 className="text-3xl font-black italic uppercase tracking-tight">Customer Nail Sets</h1>
-            <p className="text-xs text-slate-500 mt-2 font-bold">{adminName}</p>
+            <p className="text-[10px] brand-accent font-black tracking-widest uppercase mb-2">Admin Console</p>
+            <div className="brand-wordmark-small text-4xl leading-none">Nails By Liz</div>
+            <h1 className="text-2xl font-black uppercase brand-heading mt-1">Customer Nail Sets</h1>
+            <p className="text-xs brand-eyebrow mt-2 font-bold">{adminName}</p>
           </div>
           <button
             onClick={logout}
-            className="h-12 px-4 rounded-2xl bg-slate-900 border border-slate-800 text-slate-300 text-xs font-black uppercase tracking-widest flex items-center gap-2 active:scale-95"
+            className="brand-secondary h-12 px-4 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center gap-2 active:scale-95"
           >
             <LogOut className="w-4 h-4" /> Logout
           </button>
         </header>
 
-        <section className="border border-slate-800 bg-slate-900/45 rounded-3xl overflow-hidden mb-6">
-          <div className="p-5 border-b border-slate-800 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
-              <Users className="w-5 h-5 text-emerald-400" />
+        <section className="brand-admin-panel overflow-hidden mb-6">
+          <div className="p-5 border-b brand-divider flex items-center gap-3">
+            <div className="brand-icon-card w-10 h-10 flex items-center justify-center">
+              <Users className="w-5 h-5 brand-accent" />
             </div>
             <div>
-              <p className="text-[10px] text-emerald-400 font-black tracking-widest uppercase">Access</p>
-              <h2 className="text-lg font-black text-white">Admin Accounts</h2>
+              <p className="text-[10px] brand-accent font-black tracking-widest uppercase">Access</p>
+              <h2 className="text-lg font-black brand-heading">Admin Accounts</h2>
             </div>
           </div>
 
-          <form onSubmit={createAdminAccount} className="p-5 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3 border-b border-slate-800">
+          <form onSubmit={createAdminAccount} className="p-5 grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-3 border-b brand-divider">
             <input
               type="text"
               value={newAccountName}
               onChange={(event) => setNewAccountName(event.target.value)}
               placeholder="admin-name"
-              className="h-12 bg-black/40 border border-slate-800 rounded-2xl px-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70"
+              className="brand-input h-12 border rounded-2xl px-4 text-sm font-bold outline-none"
               autoComplete="off"
             />
             <input
@@ -619,12 +627,12 @@ function AdminPortal() {
               value={newAccountPassword}
               onChange={(event) => setNewAccountPassword(event.target.value)}
               placeholder="temporary password"
-              className="h-12 bg-black/40 border border-slate-800 rounded-2xl px-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70"
+              className="brand-input h-12 border rounded-2xl px-4 text-sm font-bold outline-none"
               autoComplete="new-password"
             />
             <button
               disabled={loading}
-              className="h-12 px-5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95"
+              className="brand-primary h-12 px-5 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95"
             >
               <UserPlus className="w-4 h-4" /> Create
             </button>
@@ -647,15 +655,15 @@ function AdminPortal() {
                   <tr key={account.id} className="border-t border-slate-800/80">
                     <td className="px-4 py-3">
                       <div className="font-black text-sm">{account.adminName}</div>
-                      <div className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{account.role}</div>
+                      <div className="text-[9px] brand-eyebrow font-black uppercase tracking-widest">{account.role}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest border ${account.active ? 'border-emerald-500/35 text-emerald-300 bg-emerald-500/10' : 'border-slate-700 text-slate-500 bg-slate-950/60'}`}>
+                      <span className={`inline-flex rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest border ${account.active ? 'brand-chip-active' : 'brand-chip'}`}>
                         {account.active ? 'Active' : 'Disabled'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-400 font-bold">{formatDate(account.lastLoginAt)}</td>
-                    <td className="px-4 py-3 text-xs text-slate-400 font-bold">{account.createdBy || 'System'}</td>
+                    <td className="px-4 py-3 text-xs brand-eyebrow font-bold">{formatDate(account.lastLoginAt)}</td>
+                    <td className="px-4 py-3 text-xs brand-eyebrow font-bold">{account.createdBy || 'System'}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <input
@@ -666,14 +674,14 @@ function AdminPortal() {
                             [account.id]: event.target.value,
                           }))}
                           placeholder="new password"
-                          className="h-10 w-44 bg-black/40 border border-slate-800 rounded-xl px-3 text-xs font-bold outline-none focus:border-emerald-500/70"
+                          className="brand-input h-10 w-44 border rounded-xl px-3 text-xs font-bold outline-none"
                           autoComplete="new-password"
                         />
                         <button
                           type="button"
                           onClick={() => resetAdminPassword(account)}
                           disabled={loading || !(accountPasswordDrafts[account.id] || '').length}
-                          className="h-10 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/35 text-emerald-300 text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-2 active:scale-95 disabled:opacity-40"
+                          className="brand-secondary h-10 px-3 rounded-xl text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-2 active:scale-95 disabled:opacity-40"
                         >
                           <KeyRound className="w-4 h-4" /> Reset
                         </button>
@@ -684,7 +692,7 @@ function AdminPortal() {
                         type="button"
                         onClick={() => toggleAdminAccount(account)}
                         disabled={loading || account.adminName === adminName}
-                        className="h-10 px-4 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-2 active:scale-95 disabled:opacity-40"
+                        className="brand-secondary h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-2 active:scale-95 disabled:opacity-40"
                       >
                         <Power className="w-4 h-4" /> {account.active ? 'Disable' : 'Enable'}
                       </button>
@@ -702,11 +710,11 @@ function AdminPortal() {
             value={searchEmail}
             onChange={(event) => setSearchEmail(event.target.value)}
             placeholder="customer@email.com"
-            className="h-12 flex-1 bg-black/40 border border-slate-800 rounded-2xl px-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70"
+            className="brand-input h-12 flex-1 border rounded-2xl px-4 text-sm font-bold outline-none"
           />
           <button
             disabled={loading}
-            className="h-12 px-6 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95"
+            className="brand-primary h-12 px-6 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95"
           >
             <Search className="w-4 h-4" /> Search
           </button>
@@ -720,13 +728,13 @@ function AdminPortal() {
 
         <div className="space-y-6">
           {sessions.map(session => (
-            <section key={session.session_id} className="border border-slate-800 bg-slate-900/45 rounded-3xl overflow-hidden">
-              <div className="p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <section key={session.session_id} className="brand-admin-panel overflow-hidden">
+              <div className="p-5 border-b brand-divider flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <p className="text-[10px] text-slate-500 font-black tracking-widest uppercase">{session.status || 'draft'} session</p>
-                  <h2 className="text-lg font-black text-white">{session.customer_email}</h2>
+                  <p className="text-[10px] brand-eyebrow font-black tracking-widest uppercase">{session.status || 'draft'} session</p>
+                  <h2 className="text-lg font-black brand-heading">{session.customer_email}</h2>
                 </div>
-                <div className="text-left sm:text-right text-[10px] text-slate-500 font-black uppercase tracking-widest">
+                <div className="text-left sm:text-right text-[10px] brand-eyebrow font-black uppercase tracking-widest">
                   <div>{formatDate(session.updated_at || session.created_at)}</div>
                   <div>{session.measurements?.length || 0} measurements</div>
                 </div>
@@ -754,34 +762,34 @@ function AdminPortal() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="font-black text-sm">{measurement.finger_name}</div>
-                            <div className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{measurement.hand_side}</div>
+                            <div className="text-[9px] brand-eyebrow font-black uppercase tracking-widest">{measurement.hand_side}</div>
                           </td>
                           <td className="px-4 py-3">
                             <input
                               value={draft.mm ?? measurement.measurement_mm ?? ''}
                               onChange={(event) => updateDraft(measurement.id, 'mm', event.target.value)}
-                              className="w-24 h-11 bg-black/40 border border-slate-800 rounded-xl px-3 text-sm font-bold outline-none focus:border-emerald-500/70"
+                              className="brand-input w-24 h-11 border rounded-xl px-3 text-sm font-bold outline-none"
                             />
                           </td>
                           <td className="px-4 py-3">
                             <input
                               value={draft.size ?? measurement.nail_size ?? ''}
                               onChange={(event) => updateDraft(measurement.id, 'size', event.target.value)}
-                              className="w-20 h-11 bg-black/40 border border-slate-800 rounded-xl px-3 text-sm font-bold outline-none focus:border-emerald-500/70"
+                              className="brand-input w-20 h-11 border rounded-xl px-3 text-sm font-bold outline-none"
                             />
                           </td>
                           <td className="px-4 py-3">
                             <input
                               value={draft.adminNote ?? measurement.admin_note ?? ''}
                               onChange={(event) => updateDraft(measurement.id, 'adminNote', event.target.value)}
-                              className="w-full h-11 bg-black/40 border border-slate-800 rounded-xl px-3 text-sm font-bold outline-none focus:border-emerald-500/70"
+                              className="brand-input w-full h-11 border rounded-xl px-3 text-sm font-bold outline-none"
                             />
                           </td>
                           <td className="px-4 py-3 text-right">
                             <button
                               onClick={() => updateMeasurement(measurement)}
                               disabled={loading}
-                              className="h-11 px-4 rounded-xl bg-emerald-500/10 border border-emerald-500/35 text-emerald-300 text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                              className="brand-secondary h-11 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-2 active:scale-95 disabled:opacity-50"
                             >
                               <Save className="w-4 h-4" /> Save
                             </button>

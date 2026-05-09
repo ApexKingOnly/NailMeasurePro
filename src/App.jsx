@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Camera, ShieldAlert, Scan, CheckCircle2, ChevronLeft, ChevronRight, Mail } from 'lucide-react'
+import { Camera, ShieldAlert, Scan, CheckCircle2, ChevronLeft, ChevronRight, Mail, Sparkles } from 'lucide-react'
 import { getFullSizing, calculateFingerWidthPixels, calculateMM, mmToNailSize } from './utils/sizing'
 import AdminPortal from './AdminPortal.jsx'
 
@@ -20,6 +20,15 @@ const APP_VERSION = 'training-labels-v1';
 const TRAINING_STATUS_IDLE = { status: 'idle', label: '' };
 const CUSTOMER_SAVE_STATUS_IDLE = { status: 'idle', label: '' };
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const BRAND_GUIDE = {
+  coin: '#c9a56a',
+  coinRadius: '#c9b4dc',
+  nail: '#fff8ee',
+  nailAccent: '#e8b7b3',
+  cocoa: '#6f351f',
+  ready: '#c9a56a',
+  alert: '#cf5b70',
+};
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -465,7 +474,7 @@ function App() {
   const [isVisionReady, setIsVisionReady] = useState(false)
   const [isVisionCrashed, setIsVisionCrashed] = useState(false)
   const [librariesLoaded, setLibrariesLoaded] = useState(false)
-  const [message, setMessage] = useState('System Booting...')
+  const [message, setMessage] = useState('Getting camera ready...')
   const [isStableSignal, setIsStableSignal] = useState(false)
   const [detectionState, setDetectionState] = useState({ quarter: false, finger: false, level: true })
   
@@ -559,7 +568,7 @@ function App() {
     customerSessionIdRef.current = createSessionId()
     isAdvancingRef.current = false
     setResults({})
-    setMessage('Activating Hardware...')
+    setMessage('Opening camera...')
     lastHandRef.current = null
     lastQuarterRef.current = 0
     videoDimsRef.current = { w: 0, h: 0 }
@@ -704,7 +713,7 @@ function App() {
        }
 
        try {
-          setMessage('Activating Hardware...');
+          setMessage('Opening camera...');
           const stream = await requestStream({
              video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
           });
@@ -881,7 +890,7 @@ function App() {
           }
 
           setIsVisionReady(true);
-          setMessage('READY (V11-PRECISION)');
+          setMessage('Ready to measure');
        } catch (err) {
           logToHUD(`FATAL V11: ${err.message}`);
           setIsVisionCrashed(true);
@@ -936,10 +945,10 @@ function App() {
 
             ctx.save();
             ctx.setLineDash([]);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.strokeStyle = 'rgba(255, 248, 238, 0.78)';
             ctx.lineWidth = 2.5; // Thin surgical line
             ctx.shadowBlur = 12;
-            ctx.shadowColor = 'rgba(255, 255, 255, 0.4)';
+            ctx.shadowColor = 'rgba(201, 180, 220, 0.35)';
 
             // 🔳 Precision Bracket (Nail Target)
             // Top-Left
@@ -964,7 +973,7 @@ function App() {
             const currentOrientation = orientationRef.current;
             const currentlyLeveled = isLeveledRef.current;
             const cx = w/2; const cy = h/2; // Center
-            ctx.strokeStyle = currentlyLeveled ? '#10b981' : 'rgba(255,255,255,0.2)';
+            ctx.strokeStyle = currentlyLeveled ? BRAND_GUIDE.ready : 'rgba(255,248,238,0.24)';
             ctx.lineWidth = 2;
             ctx.beginPath(); ctx.arc(cx, cy, 20, 0, 2 * Math.PI); ctx.stroke(); // Static Target
             ctx.beginPath(); ctx.moveTo(cx - 30, cy); ctx.lineTo(cx + 30, cy); ctx.stroke(); // Static Horizontal
@@ -975,10 +984,10 @@ function App() {
             const dotY = cy + (currentOrientation.pitch * 2.5);
             ctx.beginPath(); 
             ctx.arc(dotX, dotY, 6, 0, 2 * Math.PI);
-            ctx.fillStyle = currentlyLeveled ? '#10b981' : '#f43f5e';
+            ctx.fillStyle = currentlyLeveled ? BRAND_GUIDE.ready : BRAND_GUIDE.alert;
             ctx.fill();
             if (currentlyLeveled) {
-               ctx.shadowBlur = 20; ctx.shadowColor = '#10b981';
+               ctx.shadowBlur = 20; ctx.shadowColor = 'rgba(201,165,106,0.7)';
                ctx.stroke();
             }
             ctx.restore();
@@ -1023,10 +1032,10 @@ function App() {
             ctx.setLineDash([]);
             ctx.beginPath();
             ctx.arc(quarter.x, quarter.y, quarter.radius, 0, 2 * Math.PI);
-            ctx.strokeStyle = '#10b981';
+            ctx.strokeStyle = BRAND_GUIDE.ready;
             ctx.lineWidth = 4;
             ctx.shadowBlur = 16;
-            ctx.shadowColor = 'rgba(16, 185, 129, 0.7)';
+            ctx.shadowColor = 'rgba(201, 165, 106, 0.72)';
             ctx.stroke();
             ctx.restore();
          }
@@ -1040,7 +1049,7 @@ function App() {
 
                ctx.beginPath();
                ctx.arc(x, y, isActiveFinger ? 4 : 2, 0, 2 * Math.PI);
-               ctx.fillStyle = fingerDetected ? 'rgba(16, 185, 129, 0.75)' : 'rgba(255,255,255,0.45)';
+               ctx.fillStyle = fingerDetected ? 'rgba(201, 165, 106, 0.86)' : 'rgba(255,248,238,0.5)';
                ctx.fill();
             });
          }
@@ -1068,7 +1077,7 @@ function App() {
 
             if (hasSizing) {
                setIsStableSignal(true);
-               setMessage(`TARGET LOCKED: SIZE ${sizing.size}`);
+               setMessage(`Size ${sizing.size} ready`);
                setMeasurement(prev => (
                   prev?.mm === sizing.mm && prev?.size === sizing.size
                      ? prev
@@ -1373,24 +1382,24 @@ function App() {
   const assistZoomStyle = { transform: `scale(${assistZoom})`, transformOrigin: 'center center' };
   const assistAi = assistFrame?.ai || { status: 'manual', label: 'MANUAL' };
   const assistAiClass = assistAi.status === 'suggested' || assistAi.status === 'saved'
-     ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+     ? 'brand-chip-active'
      : assistAi.status === 'scanning'
-        ? 'bg-cyan-500/15 text-cyan-200 border-cyan-500/40 animate-pulse'
-        : 'bg-slate-900 text-slate-400 border-slate-800';
+        ? 'brand-chip animate-pulse'
+        : 'brand-chip';
   const trainingStatusClass = trainingStatus.status === 'saved'
-     ? 'bg-emerald-500/90 text-slate-950 border-emerald-300'
+     ? 'brand-live-badge-on'
      : trainingStatus.status === 'saving'
-        ? 'bg-cyan-500/20 text-cyan-100 border-cyan-500/45 animate-pulse'
+        ? 'brand-chip-active animate-pulse'
         : trainingStatus.status === 'error'
-           ? 'bg-rose-500/20 text-rose-100 border-rose-500/45'
-           : 'bg-slate-950/70 text-slate-500 border-slate-800';
+           ? 'brand-status-error'
+           : 'brand-live-badge';
   const customerSaveStatusClass = customerSaveStatus.status === 'saved'
-     ? 'bg-emerald-500/90 text-slate-950 border-emerald-300'
+     ? 'brand-live-badge-on'
      : customerSaveStatus.status === 'saving'
-        ? 'bg-cyan-500/20 text-cyan-100 border-cyan-500/45 animate-pulse'
+        ? 'brand-chip-active animate-pulse'
         : customerSaveStatus.status === 'error'
-           ? 'bg-rose-500/20 text-rose-100 border-rose-500/45'
-           : 'bg-slate-950/70 text-slate-500 border-slate-800';
+           ? 'brand-status-error'
+           : 'brand-live-badge';
   const renderAssistHandle = (handle, x, y, color) => (
      <g key={handle} onPointerDown={(event) => startAssistDrag(handle, event)} style={{ cursor: 'grab' }}>
         <circle cx={x} cy={y} r="30" fill="transparent" stroke="transparent" strokeWidth="1" />
@@ -1422,7 +1431,7 @@ function App() {
            aria-label="Go to previous finger"
            onClick={() => goToShot(shotNumberRef.current - 1)}
            disabled={shotNumber <= 1}
-           className={`w-12 h-12 flex items-center justify-center rounded-2xl border shadow-xl active:scale-95 transition-all ${shotNumber <= 1 ? 'bg-slate-950/55 border-slate-800 text-slate-700 cursor-not-allowed' : 'bg-slate-950/85 border-slate-700 text-white hover:border-emerald-500/50'}`}
+           className={`w-12 h-12 brand-icon-button flex items-center justify-center rounded-2xl border shadow-xl active:scale-95 transition-all ${shotNumber <= 1 ? 'cursor-not-allowed opacity-45' : 'hover:opacity-90'}`}
         >
            <ChevronLeft className="w-6 h-6" strokeWidth={3} />
         </button>
@@ -1430,7 +1439,7 @@ function App() {
            aria-label="Go to next finger"
            onClick={() => goToShot(shotNumberRef.current + 1)}
            disabled={shotNumber >= steps.length}
-           className={`w-12 h-12 flex items-center justify-center rounded-2xl border shadow-xl active:scale-95 transition-all ${shotNumber >= steps.length ? 'bg-slate-950/55 border-slate-800 text-slate-700 cursor-not-allowed' : 'bg-slate-950/85 border-slate-700 text-white hover:border-emerald-500/50'}`}
+           className={`w-12 h-12 brand-icon-button flex items-center justify-center rounded-2xl border shadow-xl active:scale-95 transition-all ${shotNumber >= steps.length ? 'cursor-not-allowed opacity-45' : 'hover:opacity-90'}`}
         >
            <ChevronRight className="w-6 h-6" strokeWidth={3} />
         </button>
@@ -1441,48 +1450,47 @@ function App() {
         aria-label="Take snapshot for assisted measurement"
         onClick={startAssistMeasurement}
         disabled={!isCameraReady}
-        className={`w-24 h-24 flex items-center justify-center rounded-[36px] transition-all shadow-2xl relative overflow-hidden ring-[12px] ${isCameraReady ? 'bg-emerald-500 text-slate-950 ring-emerald-500/20 cursor-pointer active:scale-90 active:bg-emerald-400 hover:bg-emerald-400' : 'bg-slate-800/80 text-slate-600 ring-slate-800/20 cursor-not-allowed opacity-80'}`}
+        className={`w-24 h-24 brand-camera-button flex items-center justify-center rounded-[36px] transition-all shadow-2xl relative overflow-hidden ring-[12px] ${isCameraReady ? 'ring-amber-200/25 cursor-pointer active:scale-90 hover:brightness-105' : 'ring-white/10 cursor-not-allowed opacity-80'}`}
      >
         <Camera className={`w-9 h-9 scale-110 ${!isCameraReady && 'opacity-50'}`} strokeWidth={3} />
      </button>
   );
 
   if (currentStep === 'finish') return (
-    <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-6 text-center overflow-y-auto">
-       <div className="absolute top-0 inset-x-0 h-64 bg-emerald-500/5 blur-3xl opacity-50" />
-       
-       <CheckCircle2 className="w-16 h-16 text-emerald-500 mb-4 drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]" />
-       <h2 className="text-3xl font-black text-white mb-1 tracking-tighter italic uppercase">NAIL PALETTE REPORT 🛡️</h2>
-       <p className="text-slate-500 mb-8 text-[9px] font-black tracking-widest uppercase opacity-60">V30 SURGICAL PRECISION LOG</p>
+    <div className="brand-shell fixed inset-0 flex flex-col items-center justify-center p-6 text-center overflow-y-auto">
+       <CheckCircle2 className="w-16 h-16 brand-accent mb-4" />
+       <div className="brand-wordmark-small text-5xl mb-1">Nails By Liz</div>
+       <h2 className="text-2xl font-black brand-heading mb-2 uppercase">Sizing Report</h2>
+       <p className="brand-eyebrow mb-8 text-[10px] font-black tracking-widest uppercase">Professional nail art services</p>
        
        <div className="w-full max-w-sm flex flex-col gap-6 mb-10">
           {/* LEFT HAND */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-5 backdrop-blur-md">
-             <div className="text-[10px] text-emerald-400 font-black tracking-widest uppercase mb-4 text-left border-b border-emerald-500/10 pb-2 flex items-center gap-2">
+          <div className="brand-panel p-5">
+             <div className="text-[10px] brand-accent font-black tracking-widest uppercase mb-4 text-left border-b brand-divider pb-2 flex items-center gap-2">
                 <ChevronRight className="w-3 h-3" /> LEFT HAND PALETTE
              </div>
              <div className="grid grid-cols-5 gap-2">
                 {steps.slice(0, 5).map(f => (
-                   <div key={f} className="flex flex-col items-center bg-black/40 p-2 rounded-xl border border-slate-800/80">
-                      <span className="text-[7px] text-slate-500 font-bold mb-1 truncate w-full uppercase">{f.replace('Left ', '')}</span>
-                      <span className="text-sm font-black text-white leading-none tracking-tighter">#{results[f]?.size || '0'}</span>
-                      <span className="text-[7px] text-emerald-500/60 font-black mt-1 leading-none">{results[f]?.mm}mm</span>
+                   <div key={f} className="brand-tile flex flex-col items-center p-2">
+                      <span className="text-[7px] brand-eyebrow font-bold mb-1 truncate w-full uppercase">{f.replace('Left ', '')}</span>
+                      <span className="text-sm font-black brand-heading leading-none">#{results[f]?.size || '0'}</span>
+                      <span className="text-[7px] brand-accent font-black mt-1 leading-none">{results[f]?.mm}mm</span>
                    </div>
                 ))}
              </div>
           </div>
 
           {/* RIGHT HAND */}
-          <div className="bg-slate-900/60 border border-slate-800 rounded-3xl p-5 backdrop-blur-md">
-             <div className="text-[10px] text-emerald-400 font-black tracking-widest uppercase mb-4 text-left border-b border-emerald-500/10 pb-2 flex items-center gap-2">
+          <div className="brand-panel p-5">
+             <div className="text-[10px] brand-accent font-black tracking-widest uppercase mb-4 text-left border-b brand-divider pb-2 flex items-center gap-2">
                 <ChevronRight className="w-3 h-3" /> RIGHT HAND PALETTE
              </div>
              <div className="grid grid-cols-5 gap-2">
                 {steps.slice(5, 10).map(f => (
-                   <div key={f} className="flex flex-col items-center bg-black/40 p-2 rounded-xl border border-slate-800/80">
-                      <span className="text-[7px] text-slate-500 font-bold mb-1 truncate w-full uppercase">{f.replace('Right ', '')}</span>
-                      <span className="text-sm font-black text-white leading-none tracking-tighter">#{results[f]?.size || '0'}</span>
-                      <span className="text-[7px] text-emerald-500/60 font-black mt-1 leading-none">{results[f]?.mm}mm</span>
+                   <div key={f} className="brand-tile flex flex-col items-center p-2">
+                      <span className="text-[7px] brand-eyebrow font-bold mb-1 truncate w-full uppercase">{f.replace('Right ', '')}</span>
+                      <span className="text-sm font-black brand-heading leading-none">#{results[f]?.size || '0'}</span>
+                      <span className="text-[7px] brand-accent font-black mt-1 leading-none">{results[f]?.mm}mm</span>
                    </div>
                 ))}
              </div>
@@ -1492,7 +1500,7 @@ function App() {
        <div className="flex flex-col gap-3 w-full max-w-sm">
           <button
              onClick={() => goToShot(1)}
-             className="w-full py-5 bg-slate-900 border border-slate-700 text-slate-200 font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-xs tracking-widest uppercase mb-1"
+             className="brand-secondary w-full py-5 font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-xs tracking-widest uppercase mb-1"
           >
              <ChevronLeft className="w-4 h-4" /> EDIT MEASUREMENTS
           </button>
@@ -1500,52 +1508,51 @@ function App() {
           <button 
              onClick={() => {
                 const text = steps.map(f => `${f}: Size ${results[f]?.size} (${results[f]?.mm}mm)`).join('\n');
-                navigator.clipboard.writeText(`NAILSCALE REPORT:\n${text}`);
-                alert("Nail Report Copied to Clipboard! 🛡️💅🏽");
+                navigator.clipboard.writeText(`NAILS BY LIZ SIZING REPORT:\n${text}`);
+                alert("Nail report copied to clipboard.");
              }}
-             className="w-full py-5 bg-slate-900 border border-emerald-500/50 text-emerald-400 font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-xs tracking-widest uppercase mb-1"
+             className="brand-secondary w-full py-5 font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 transition-all text-xs tracking-widest uppercase mb-1"
           >
              <ChevronRight className="w-4 h-4" /> COPY TEXT REPORT
           </button>
           
-          <button onClick={() => setCurrentStep('welcome')} className="w-full py-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-2xl shadow-2xl transition-all active:scale-95 text-lg shadow-emerald-500/20 ring-4 ring-emerald-500/10 uppercase">START NEW SESSION</button>
+          <button onClick={() => setCurrentStep('welcome')} className="brand-primary w-full py-5 font-black rounded-2xl shadow-2xl transition-all active:scale-95 text-lg uppercase">START NEW SESSION</button>
        </div>
     </div>
   )
 
   if (currentStep === 'welcome') return (
-    <div className="fixed inset-0 bg-slate-950 flex flex-col items-center justify-center p-12 overflow-hidden">
-       <div className="absolute top-0 inset-x-0 h-96 bg-emerald-500/10 blur-[120px] rounded-full -translate-y-1/2" />
-       <div className="relative z-10 w-24 h-24 bg-slate-900 border border-emerald-500/30 rounded-[32px] flex items-center justify-center mb-10 shadow-inner">
-          <Scan className="w-10 h-10 text-emerald-400" />
+    <div className="brand-shell fixed inset-0 flex flex-col items-center justify-center p-8 sm:p-12 overflow-hidden">
+       <div className="brand-icon-card relative z-10 w-24 h-24 flex items-center justify-center mb-8 shadow-inner">
+          <Sparkles className="w-10 h-10 brand-accent" />
        </div>
-       <h1 className="text-4xl font-black text-white mb-3 tracking-tighter leading-none italic">NailScale <span className="text-emerald-500 underline decoration-4 decoration-emerald-500/20 underline-offset-8">AI</span></h1>
-       <p className="text-slate-500 font-bold tracking-widest text-[9px] uppercase mb-16 opacity-70">V30.0 STRICT LOCK | PRECISION MASTER</p>
+       <h1 className="brand-logo mb-3">Nails By Liz</h1>
+       <p className="brand-eyebrow font-bold tracking-widest text-[10px] uppercase mb-10 opacity-80 text-center">Professional Nail Art Services</p>
        
-       <div className="w-full max-w-sm bg-slate-900/40 border border-slate-800/50 rounded-3xl p-8 mb-12 backdrop-blur-xl">
+       <div className="brand-panel w-full max-w-[300px] sm:max-w-sm p-5 sm:p-8 mb-8">
           <div className="flex items-center gap-4 mb-4">
-             <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-             <span className="text-xs text-slate-300 font-bold">PRECISION GRID SEQUENCE</span>
+             <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: BRAND_GUIDE.coin }} />
+             <span className="text-xs brand-heading font-bold uppercase tracking-widest">Measure all 10 nails</span>
           </div>
           <ul className="grid grid-cols-2 gap-x-8 gap-y-3">
              {steps.map(s => (
-                <li key={s} className="flex items-center gap-2 text-slate-400 font-black text-[9px] uppercase tracking-widest leading-none">
-                   <ChevronRight className="w-3 h-3 text-emerald-500 shrink-0" /> {s.replace('Left ', 'L-').replace('Right ', 'R-')}
+                <li key={s} className="flex items-center gap-2 brand-eyebrow font-black text-[9px] uppercase tracking-widest leading-none">
+                   <ChevronRight className="w-3 h-3 brand-accent shrink-0" /> {s.replace('Left ', 'L-').replace('Right ', 'R-')}
                 </li>
              ))}
           </ul>
        </div>
 
-       <div className="w-full max-w-sm mb-5">
-          <label className="block text-[10px] text-slate-500 font-black tracking-widest uppercase mb-2">CUSTOMER EMAIL</label>
+       <div className="w-full max-w-[300px] sm:max-w-sm mb-5">
+          <label className="block text-[10px] brand-eyebrow font-black tracking-widest uppercase mb-2">CUSTOMER EMAIL</label>
           <div className="relative">
-             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-400" />
+             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 brand-accent" />
              <input
                 type="email"
                 value={customerEmail}
                 onChange={(event) => setCustomerEmail(event.target.value)}
                 placeholder="customer@email.com"
-                className="w-full h-14 bg-slate-900/70 border border-slate-800 rounded-2xl pl-11 pr-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70"
+                className="brand-input w-full h-14 border rounded-2xl pl-11 pr-4 text-sm font-bold outline-none"
                 autoComplete="email"
              />
           </div>
@@ -1554,14 +1561,14 @@ function App() {
        <button 
           onClick={startWizard}
           disabled={systemBooting}
-          className={`w-full max-w-sm py-6 rounded-3xl font-black text-xl tracking-tighter shadow-2xl transition-all active:scale-95 ${systemBooting ? 'bg-slate-800 text-slate-500 grayscale' : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/30 ring-4 ring-emerald-500/10'}`}
+          className={`brand-primary w-full max-w-[300px] sm:max-w-sm py-6 rounded-3xl font-black text-xl shadow-2xl transition-all active:scale-95 ${systemBooting ? 'grayscale' : ''}`}
        >
-          {systemBooting ? 'SYSTEM BOOTING...' : 'INITIALIZE PRECISION GRID'}
+          {systemBooting ? 'GETTING CAMERA READY...' : 'START NAIL SIZING'}
        </button>
 
        <button
           onClick={() => { window.location.href = '/admin'; }}
-          className="mt-5 text-[10px] font-black tracking-widest uppercase text-slate-600 hover:text-emerald-400"
+          className="brand-ghost mt-5 text-[10px] font-black tracking-widest uppercase"
        >
           ADMIN
        </button>
@@ -1569,32 +1576,32 @@ function App() {
   )
 
   return (
-    <div className="fixed inset-0 bg-black flex flex-col font-sans overflow-hidden select-none">
+    <div className="brand-camera-shell fixed inset-0 flex flex-col font-sans overflow-hidden select-none">
        {/* SHUTTER FLASH LAYER */}
        {shutterFlash && <div className="absolute inset-0 bg-white z-[100] animate-out fade-out duration-150" />}
        {topNavigationControls}
 
        {assistFrame && quarter && nail && radiusHandle && (
-          <div className="absolute inset-0 z-[90] bg-slate-950 flex flex-col font-sans overflow-hidden">
-             <div className="px-5 pt-20 pb-4 border-b border-slate-900/80 flex items-center justify-between gap-4">
+          <div className="brand-assist-shell absolute inset-0 z-[90] flex flex-col font-sans overflow-hidden">
+             <div className="brand-assist-header px-5 pt-20 pb-4 border-b flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                   <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">ASSIST {shotNumber}/10</span>
-                   <h3 className="text-xl font-black text-white tracking-widest leading-none uppercase italic truncate">{steps[shotNumber-1]}</h3>
+                   <span className="text-[10px] brand-eyebrow font-black tracking-[0.2em] uppercase opacity-80">ASSIST {shotNumber}/10</span>
+                   <h3 className="text-xl font-black brand-heading leading-none uppercase truncate">{steps[shotNumber-1]}</h3>
                    <span className={`mt-2 inline-flex px-2 py-1 rounded-full border text-[8px] font-black tracking-widest ${assistAiClass}`}>
                       {assistAi.label}
                    </span>
                 </div>
                 <div className="text-right shrink-0">
-                   <div className="text-[10px] text-slate-500 font-black tracking-widest uppercase">SIZE</div>
-                   <div className="text-3xl font-black text-emerald-400 leading-none">#{assistMeasurement?.size || '-'}</div>
-                   <div className="text-[10px] text-slate-400 font-black">{assistMeasurement?.mm || '0.00'}mm</div>
+                   <div className="text-[10px] brand-eyebrow font-black tracking-widest uppercase">SIZE</div>
+                   <div className="brand-measure-readout text-3xl font-black leading-none">#{assistMeasurement?.size || '-'}</div>
+                   <div className="text-[10px] brand-eyebrow font-black">{assistMeasurement?.mm || '0.00'}mm</div>
                 </div>
              </div>
 
-             <div className="flex-1 min-h-0 p-3 flex items-center justify-center bg-black">
+             <div className="brand-assist-stage flex-1 min-h-0 p-3 flex items-center justify-center">
                 <div
                    ref={assistSurfaceRef}
-                   className="relative max-w-3xl overflow-hidden border border-slate-800 bg-black touch-none"
+                   className="brand-assist-surface relative max-w-3xl overflow-hidden border bg-black touch-none"
                    style={{
                       aspectRatio: `${assistFrame.width} / ${assistFrame.height}`,
                       width: `min(100%, calc(72vh * ${assistFrame.width / assistFrame.height}))`,
@@ -1626,26 +1633,26 @@ function App() {
                          </filter>
                       </defs>
 
-                      <circle cx={quarter.x} cy={quarter.y} r={quarter.r} fill="rgba(16,185,129,0.06)" stroke="#10b981" strokeWidth="2.5" strokeDasharray="12 10" filter="url(#assistGlow)" />
-                      <line x1={quarter.x - 10} y1={quarter.y} x2={quarter.x + 10} y2={quarter.y} stroke="#10b981" strokeWidth="2" />
-                      <line x1={quarter.x} y1={quarter.y - 10} x2={quarter.x} y2={quarter.y + 10} stroke="#10b981" strokeWidth="2" />
+                      <circle cx={quarter.x} cy={quarter.y} r={quarter.r} fill="rgba(201,165,106,0.06)" stroke={BRAND_GUIDE.coin} strokeWidth="2.5" strokeDasharray="12 10" filter="url(#assistGlow)" />
+                      <line x1={quarter.x - 10} y1={quarter.y} x2={quarter.x + 10} y2={quarter.y} stroke={BRAND_GUIDE.coin} strokeWidth="2" />
+                      <line x1={quarter.x} y1={quarter.y - 10} x2={quarter.x} y2={quarter.y + 10} stroke={BRAND_GUIDE.coin} strokeWidth="2" />
 
-                      <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#f8fafc" strokeWidth="5" strokeLinecap="round" opacity="0.25" filter="url(#assistGlow)" />
-                      <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#10b981" strokeWidth="2.25" strokeLinecap="round" strokeDasharray="7 6" />
+                      <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke={BRAND_GUIDE.nail} strokeWidth="5" strokeLinecap="round" opacity="0.28" filter="url(#assistGlow)" />
+                      <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke={BRAND_GUIDE.nailAccent} strokeWidth="2.25" strokeLinecap="round" strokeDasharray="7 6" />
 
-                      {renderAssistHandle('quarter', quarter.x, quarter.y, '#10b981')}
-                      {renderAssistHandle('quarterRadius', radiusHandle.x, radiusHandle.y, '#22d3ee')}
-                      {renderNailEdgeHandle('nailLeft', nail.left.x, nail.left.y, '#f8fafc')}
-                      {renderNailEdgeHandle('nailRight', nail.right.x, nail.right.y, '#f8fafc')}
+                      {renderAssistHandle('quarter', quarter.x, quarter.y, BRAND_GUIDE.coin)}
+                      {renderAssistHandle('quarterRadius', radiusHandle.x, radiusHandle.y, BRAND_GUIDE.coinRadius)}
+                      {renderNailEdgeHandle('nailLeft', nail.left.x, nail.left.y, BRAND_GUIDE.nail)}
+                      {renderNailEdgeHandle('nailRight', nail.right.x, nail.right.y, BRAND_GUIDE.nail)}
                    </svg>
                 </div>
              </div>
 
-             <div className="p-5 bg-slate-950 border-t border-slate-900/80 flex items-center gap-3">
+             <div className="brand-assist-footer p-5 border-t flex items-center gap-3">
                 <button
                    aria-label="Reset assisted guides"
                    onClick={resetAssistGuide}
-                   className="w-14 h-14 flex items-center justify-center bg-slate-900 border border-slate-800 rounded-2xl text-slate-300 active:scale-95"
+                   className="brand-secondary w-14 h-14 flex items-center justify-center rounded-2xl active:scale-95"
                 >
                    <Scan className="w-6 h-6" />
                 </button>
@@ -1654,7 +1661,7 @@ function App() {
                    aria-label="Use assisted measurement"
                    onClick={applyAssistMeasurement}
                    disabled={!assistMeasurement}
-                   className={`flex-1 h-16 rounded-2xl font-black tracking-widest text-xs uppercase flex items-center justify-center gap-2 active:scale-95 ${assistMeasurement ? 'bg-emerald-500 text-slate-950 shadow-xl shadow-emerald-500/20' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}
+                   className={`flex-1 h-16 rounded-2xl font-black tracking-widest text-xs uppercase flex items-center justify-center gap-2 active:scale-95 ${assistMeasurement ? 'brand-primary shadow-xl' : 'brand-secondary cursor-not-allowed opacity-50'}`}
                 >
                    <CheckCircle2 className="w-5 h-5" /> USE MEASUREMENT
                 </button>
@@ -1664,7 +1671,7 @@ function App() {
 
        {/* HUD TOP: AI STATUS */}
        <div className="absolute top-12 inset-x-0 flex flex-col items-center gap-3 z-30 pointer-events-none">
-          <div className={`px-4 py-1.5 rounded-full border text-[10px] font-black tracking-widest uppercase shadow-xl ${isStableSignal ? 'bg-emerald-500/90 text-slate-950 border-emerald-300' : 'bg-slate-950/80 text-slate-300 border-slate-700'}`}>
+          <div className={`px-4 py-1.5 rounded-full border text-[10px] font-black tracking-widest uppercase shadow-xl ${isStableSignal ? 'brand-live-badge-on' : 'brand-live-badge'}`}>
              {message}
           </div>
 
@@ -1676,7 +1683,7 @@ function App() {
              ].map(([key, label]) => (
                 <span
                    key={key}
-                   className={`px-2 py-1 rounded-full border text-[8px] font-black tracking-widest ${detectionState[key] ? 'bg-emerald-500/90 text-slate-950 border-emerald-300' : 'bg-slate-950/70 text-slate-500 border-slate-800'}`}
+                   className={`px-2 py-1 rounded-full border text-[8px] font-black tracking-widest ${detectionState[key] ? 'brand-live-badge-on' : 'brand-live-badge'}`}
                 >
                    {label}
                 </span>
@@ -1694,8 +1701,8 @@ function App() {
           </div>
 
           {isStableSignal && measurement && (
-             <div className="bg-emerald-500 text-slate-950 px-5 py-1 rounded-full font-black text-[10px] tracking-tight shadow-xl animate-in fade-in slide-in-from-top-2 border-2 border-emerald-400">
-                LOCKED: SIZE {measurement.size} (99% ACCURACY)
+             <div className="brand-live-badge-on px-5 py-1 rounded-full font-black text-[10px] shadow-xl animate-in fade-in slide-in-from-top-2 border-2">
+                SIZE {measurement.size} READY
              </div>
           )}
        </div>
@@ -1705,42 +1712,42 @@ function App() {
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover opacity-100 brightness-100 contrast-100 shadow-inner" playsInline muted />
           
           {/* Main Feed with High Contrast */}
-          <div className="absolute inset-0 w-full h-full bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/80 pointer-events-none z-0" />
+          <div className="absolute inset-0 w-full h-full bg-gradient-to-t from-[#130704]/80 via-transparent to-[#130704]/80 pointer-events-none z-0" />
           <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10 opacity-90" />
 
           {/* CRITICAL RECOVERY OVERLAY */}
           {isVisionCrashed && (
-             <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-8 text-center z-[200] animate-in fade-in duration-500">
-                <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mb-6 ring-4 ring-rose-500/20">
+             <div className="brand-assist-shell absolute inset-0 flex flex-col items-center justify-center p-8 text-center z-[200] animate-in fade-in duration-500">
+                <div className="brand-icon-card w-20 h-20 flex items-center justify-center mb-6">
                    <ShieldAlert className="w-10 h-10 text-rose-500" />
                 </div>
-                <h2 className="text-2xl font-black text-white mb-2 tracking-tighter uppercase italic">ENGINE LOCKDOWN</h2>
-                <p className="text-slate-400 text-xs max-w-[280px] mb-8 font-medium leading-relaxed uppercase tracking-widest opacity-60">Surgical vision core stalled on Vercel Node. System logs below:</p>
+                <h2 className="text-2xl font-black brand-heading mb-2 uppercase">Camera Check Needed</h2>
+                <p className="brand-eyebrow text-xs max-w-[280px] mb-8 font-medium leading-relaxed uppercase tracking-widest opacity-80">The guide system stalled. Refresh the page and allow camera access.</p>
                 
                 <div className="w-full max-w-sm bg-black border border-slate-800 rounded-2xl p-5 mb-10 text-left h-56 overflow-y-auto font-mono text-[10px] shadow-2xl relative">
                    <div className="absolute top-0 right-0 p-2 text-[8px] text-slate-700 font-black">V12 RELAY</div>
                    {debugLog.length > 0 ? debugLog.map((log, i) => (
-                      <div key={i} className="text-emerald-500/80 mb-1.5 leading-tight tracking-tight border-l border-emerald-500/20 pl-2">{log}</div>
-                   )) : <div className="text-slate-600 italic">Synchronizing Logs...</div>}
+                      <div key={i} className="text-amber-200/90 mb-1.5 leading-tight tracking-tight border-l border-amber-200/25 pl-2">{log}</div>
+                   )) : <div className="text-stone-400 italic">Checking logs...</div>}
                 </div>
 
-                <button onClick={() => window.location.reload()} className="w-full max-w-[280px] py-5 bg-rose-600 hover:bg-rose-500 text-white font-black rounded-2xl shadow-2xl transition-all active:scale-95 uppercase text-xs tracking-[0.2em] ring-4 ring-rose-600/10">FORCE SYSTEM RESTART</button>
+                <button onClick={() => window.location.reload()} className="brand-primary w-full max-w-[280px] py-5 font-black rounded-2xl shadow-2xl transition-all active:scale-95 uppercase text-xs tracking-[0.2em]">REFRESH CAMERA</button>
              </div>
           )}
        </div>
 
        {/* CONTROL SURFACE */}
-       <div className="p-6 sm:p-10 bg-slate-950 border-t border-slate-900/50 flex flex-col items-center justify-center gap-5 z-40">
+       <div className="brand-control-surface p-6 sm:p-10 border-t flex flex-col items-center justify-center gap-5 z-40">
           <div className="min-w-0 flex flex-col gap-1.5 text-center w-full max-w-sm">
-             <span className="text-[10px] text-slate-500 font-black tracking-[0.2em] uppercase opacity-70">{handSideLabel} {shotNumber}/10</span>
-             <h3 className="text-xl sm:text-2xl font-black text-white tracking-widest leading-none uppercase italic truncate">{steps[shotNumber-1]}</h3>
+             <span className="text-[10px] brand-eyebrow font-black tracking-[0.2em] uppercase opacity-80">{handSideLabel} {shotNumber}/10</span>
+             <h3 className="text-xl sm:text-2xl font-black brand-heading leading-none uppercase truncate">{steps[shotNumber-1]}</h3>
              {currentSavedMeasurement && (
-                <span className="text-[9px] text-emerald-400 font-black tracking-widest uppercase">SAVED #{currentSavedMeasurement.size} / {currentSavedMeasurement.mm}mm</span>
+                <span className="text-[9px] brand-accent font-black tracking-widest uppercase">SAVED #{currentSavedMeasurement.size} / {currentSavedMeasurement.mm}mm</span>
              )}
              {allFingersMeasured && (
                 <button
                    onClick={() => setCurrentStep('finish')}
-                   className="mx-auto mt-1 px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/35 text-emerald-300 text-[9px] font-black tracking-widest uppercase active:scale-95"
+                   className="brand-secondary mx-auto mt-1 px-4 py-2 rounded-xl text-[9px] font-black tracking-widest uppercase active:scale-95"
                 >
                    Review Report
                 </button>
