@@ -29,6 +29,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
 CUSTOMER_NAIL_SESSIONS_TABLE=customer_nail_sessions
 CUSTOMER_NAIL_MEASUREMENTS_TABLE=customer_nail_measurements
+CUSTOMER_NAIL_IMAGES_BUCKET=customer-nail-images
 
 ADMIN_ACCOUNTS_TABLE=admin_accounts
 ADMIN_NAME=admin
@@ -75,6 +76,11 @@ create table if not exists public.customer_nail_measurements (
   quarter_pixels numeric,
   nail_pixels numeric,
   guide jsonb,
+  frame jsonb,
+  image_bucket text,
+  image_path text,
+  image_mime text,
+  captured_at timestamptz,
   admin_note text,
   admin_email text,
   admin_edited_at timestamptz,
@@ -83,6 +89,10 @@ create table if not exists public.customer_nail_measurements (
 
 create index if not exists customer_nail_measurements_session_idx
   on public.customer_nail_measurements (session_id, shot_number);
+
+insert into storage.buckets (id, name, public)
+values ('customer-nail-images', 'customer-nail-images', false)
+on conflict (id) do nothing;
 
 create table if not exists public.admin_accounts (
   id uuid primary key default gen_random_uuid(),
@@ -123,7 +133,11 @@ Admin can:
 - Disable other admin accounts.
 - Search a customer by exact email.
 - View that customer's saved sessions.
+- View private signed finger photos for saved customer measurements.
+- Drag quarter and nail guides on each saved photo to correct measurements.
 - Edit each finger's millimeter value, nail size, and admin note.
+
+Admin guide edits are written back to the customer measurement record and also logged to the training labels table with `source = 'admin-correction'` when the measurement has a saved photo.
 
 ## Notes
 

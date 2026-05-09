@@ -420,6 +420,15 @@ const buildCustomerNailsetPayload = ({ customerEmail, sessionId, results, steps,
         quarterPixels: result.quarterPixels,
         nailPixels: result.nailPixels,
         guide: cloneAssistGuide(result.frame?.guide),
+        image: result.frame?.image || null,
+        frame: result.frame
+          ? {
+              width: result.frame.width,
+              height: result.frame.height,
+              zoom: result.frame.zoom || ASSIST_FRAME_ZOOM,
+            }
+          : null,
+        capturedAt: result.capturedAt || new Date().toISOString(),
       };
     })
     .filter(Boolean);
@@ -1100,8 +1109,8 @@ function App() {
     const fingerName = steps[currentShotNumber - 1];
     const resetDetection = { quarter: false, finger: false, level: isLeveledRef.current };
     const storedMeasurement = savedFrame
-      ? { ...nextMeasurement, frame: savedFrame }
-      : nextMeasurement;
+      ? { ...nextMeasurement, frame: savedFrame, capturedAt: new Date().toISOString() }
+      : { ...nextMeasurement, capturedAt: new Date().toISOString() };
     const nextResults = { ...results, [fingerName]: storedMeasurement };
     const customerSetStatus = steps.every(step => nextResults[step]?.mm && nextResults[step]?.size) ? 'complete' : 'draft';
 

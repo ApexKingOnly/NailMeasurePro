@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronRight, LogOut, Power, Save, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { calculateMM, mmToNailSize } from './utils/sizing.js';
 
 const ADMIN_TOKEN_KEY = 'nailmeasure_admin_token';
 const ADMIN_NAME_KEY = 'nailmeasure_admin_name';
@@ -37,6 +38,40 @@ const formatDate = (value) => {
   return date.toLocaleString();
 };
 
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+const cloneGuide = (guide) => {
+  if (!guide?.quarter || !guide?.nail?.left || !guide?.nail?.right) return null;
+
+  return {
+    quarter: { ...guide.quarter },
+    nail: {
+      left: { ...guide.nail.left },
+      right: { ...guide.nail.right },
+    },
+  };
+};
+
+const getGuideMeasurement = (guide) => {
+  if (!guide?.quarter || !guide?.nail?.left || !guide?.nail?.right) return null;
+  const quarterPixels = Number(guide.quarter.r) * 2;
+  const nailPixels = Math.hypot(
+    Number(guide.nail.right.x) - Number(guide.nail.left.x),
+    Number(guide.nail.right.y) - Number(guide.nail.left.y),
+  );
+  const mm = calculateMM(nailPixels, quarterPixels);
+  const size = mmToNailSize(mm);
+
+  if (!Number.isFinite(mm) || mm <= 0 || size === 'N/A') return null;
+
+  return {
+    mm: mm.toFixed(2),
+    size,
+    quarterPixels,
+    nailPixels,
+  };
+};
+
 function AdminPortal() {
   const [token, setToken] = useState(() => getStoredValue(ADMIN_TOKEN_KEY));
   const [adminName, setAdminName] = useState(() => getStoredValue(ADMIN_NAME_KEY));
@@ -45,6 +80,7 @@ function AdminPortal() {
   const [searchEmail, setSearchEmail] = useState('');
   const [sessions, setSessions] = useState([]);
   const [drafts, setDrafts] = useState({});
+  const [guideDrag, setGuideDrag] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountPassword, setNewAccountPassword] = useState('');
@@ -239,11 +275,77 @@ function AdminPortal() {
     }));
   };
 
+  const updateGuideDraft = (measurement, handle, event, surfaceElement = event.currentTarget) => {
+    const frame = measurement.frame;
+    const sourceGuide = drafts[measurement.id]?.guide || measurement.guide;
+    const guide = cloneGuide(sourceGuide);
+    const surface = surfaceElement?.ownerSVGElement || surfaceElement;
+
+    if (!frame?.width || !frame?.height || !guide || !surface?.getBoundingClientRect) return;
+
+    const rect = surface.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const point = {
+      x: clamp(((event.clientX - rect.left) / rect.width) * frame.width, 0, frame.width),
+      y: clamp(((event.clientY - rect.top) / rect.height) * frame.height, 0, frame.height),
+    };
+
+    if (handle === 'quarter') {
+      guide.quarter.x = point.x;
+      guide.quarter.y = point.y;
+    } else if (handle === 'quarterRadius') {
+      guide.quarter.r = clamp(
+        Math.hypot(point.x - guide.quarter.x, point.y - guide.quarter.y),
+        frame.width * 0.035,
+        frame.width * 0.35,
+      );
+    } else if (handle === 'nailLeft') {
+      guide.nail.left = point;
+    } else if (handle === 'nailRight') {
+      guide.nail.right = point;
+    }
+
+    const measurementResult = getGuideMeasurement(guide);
+
+    setDrafts(prev => ({
+      ...prev,
+      [measurement.id]: {
+        ...prev[measurement.id],
+        guide,
+        ...(measurementResult
+          ? {
+              mm: measurementResult.mm,
+              size: measurementResult.size,
+              quarterPixels: measurementResult.quarterPixels,
+              nailPixels: measurementResult.nailPixels,
+            }
+          : {}),
+      },
+    }));
+  };
+
+  const startGuideDrag = (measurement, handle, event) => {
+    event.preventDefault();
+    const surface = event.currentTarget.ownerSVGElement;
+    surface?.setPointerCapture?.(event.pointerId);
+    setGuideDrag({ measurementId: measurement.id, handle });
+    updateGuideDraft(measurement, handle, event, surface);
+  };
+
+  const stopGuideDrag = (event) => {
+    event.currentTarget?.releasePointerCapture?.(event.pointerId);
+    setGuideDrag(null);
+  };
+
   const updateMeasurement = async (measurement) => {
     const draft = drafts[measurement.id] || {};
     const nextSize = draft.size ?? measurement.nail_size;
     const nextMm = draft.mm ?? measurement.measurement_mm;
     const nextNote = draft.adminNote ?? measurement.admin_note ?? '';
+    const nextGuide = draft.guide ?? measurement.guide ?? null;
+    const nextQuarterPixels = draft.quarterPixels ?? measurement.quarter_pixels ?? null;
+    const nextNailPixels = draft.nailPixels ?? measurement.nail_pixels ?? null;
 
     setLoading(true);
     setStatus({ type: 'loading', text: 'Saving measurement edit' });
@@ -260,6 +362,9 @@ function AdminPortal() {
           size: nextSize,
           mm: nextMm,
           adminNote: nextNote,
+          guide: nextGuide,
+          quarterPixels: nextQuarterPixels,
+          nailPixels: nextNailPixels,
         }),
       });
       const data = await response.json();
@@ -277,7 +382,14 @@ function AdminPortal() {
       setSessions(prev => prev.map(session => ({
         ...session,
         measurements: session.measurements.map(item => (
-          item.id === updated.id ? updated : item
+          item.id === updated.id
+            ? {
+                ...item,
+                ...updated,
+                signed_image_url: item.signed_image_url,
+                image_url_error: item.image_url_error,
+              }
+            : item
         )),
       })));
       setDrafts(prev => {
@@ -285,12 +397,84 @@ function AdminPortal() {
         delete next[measurement.id];
         return next;
       });
-      setStatus({ type: 'success', text: 'Measurement updated' });
+      setStatus({ type: 'success', text: data.trainingLogged ? 'Measurement updated and AI label logged' : 'Measurement updated' });
     } catch (error) {
       setStatus({ type: 'error', text: error.message });
     } finally {
       setLoading(false);
     }
+  };
+
+  const renderMeasurementPhotoEditor = (measurement) => {
+    const draft = drafts[measurement.id] || {};
+    const frame = measurement.frame;
+    const guide = draft.guide || measurement.guide;
+    const measured = getGuideMeasurement(guide);
+
+    if (!measurement.signed_image_url || !frame?.width || !frame?.height || !guide?.quarter || !guide?.nail) {
+      return (
+        <div className="w-64 min-h-36 bg-black/40 border border-slate-800 rounded-2xl flex items-center justify-center px-4 text-center text-[10px] text-slate-500 font-black uppercase tracking-widest">
+          No saved photo
+        </div>
+      );
+    }
+
+    const quarter = guide.quarter;
+    const nail = guide.nail;
+    const radiusHandle = {
+      x: quarter.x + quarter.r,
+      y: quarter.y,
+    };
+    const isDragging = guideDrag?.measurementId === measurement.id;
+
+    const handleProps = (handle) => ({
+      onPointerDown: (event) => startGuideDrag(measurement, handle, event),
+      className: 'cursor-grab active:cursor-grabbing',
+    });
+
+    return (
+      <div className="w-72">
+        <div
+          className="relative w-72 overflow-hidden rounded-2xl border border-slate-800 bg-black touch-none"
+          style={{ aspectRatio: `${frame.width} / ${frame.height}` }}
+        >
+          <img
+            src={measurement.signed_image_url}
+            alt={`${measurement.finger_name} captured nail`}
+            className="absolute inset-0 h-full w-full object-cover"
+            draggable="false"
+          />
+          <svg
+            className="absolute inset-0 h-full w-full"
+            viewBox={`0 0 ${frame.width} ${frame.height}`}
+            preserveAspectRatio="none"
+            onPointerMove={(event) => {
+              if (guideDrag?.measurementId === measurement.id) {
+                updateGuideDraft(measurement, guideDrag.handle, event, event.currentTarget);
+              }
+            }}
+            onPointerUp={stopGuideDrag}
+            onPointerCancel={stopGuideDrag}
+          >
+            <circle cx={quarter.x} cy={quarter.y} r={quarter.r} fill="rgba(16,185,129,0.04)" stroke="#10b981" strokeWidth="2.5" strokeDasharray="12 10" />
+            <line x1={quarter.x - 10} y1={quarter.y} x2={quarter.x + 10} y2={quarter.y} stroke="#10b981" strokeWidth="2" />
+            <line x1={quarter.x} y1={quarter.y - 10} x2={quarter.x} y2={quarter.y + 10} stroke="#10b981" strokeWidth="2" />
+            <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#f8fafc" strokeWidth="5" strokeLinecap="round" opacity="0.35" />
+            <line x1={nail.left.x} y1={nail.left.y} x2={nail.right.x} y2={nail.right.y} stroke="#10b981" strokeWidth="2.25" strokeLinecap="round" strokeDasharray="7 6" />
+
+            <circle cx={quarter.x} cy={quarter.y} r="18" fill="rgba(16,185,129,0.01)" stroke="#10b981" strokeWidth="2" {...handleProps('quarter')} />
+            <circle cx={radiusHandle.x} cy={radiusHandle.y} r="16" fill="rgba(34,211,238,0.01)" stroke="#22d3ee" strokeWidth="2" {...handleProps('quarterRadius')} />
+            <line x1={nail.left.x} y1={nail.left.y - 60} x2={nail.left.x} y2={nail.left.y + 112} stroke="#f8fafc" strokeWidth="2" strokeDasharray="8 7" opacity="0.9" {...handleProps('nailLeft')} />
+            <line x1={nail.right.x} y1={nail.right.y - 60} x2={nail.right.x} y2={nail.right.y + 112} stroke="#f8fafc" strokeWidth="2" strokeDasharray="8 7" opacity="0.9" {...handleProps('nailRight')} />
+            <circle cx={nail.left.x} cy={nail.left.y} r="18" fill="rgba(248,250,252,0.01)" stroke="#f8fafc" strokeWidth="2" {...handleProps('nailLeft')} />
+            <circle cx={nail.right.x} cy={nail.right.y} r="18" fill="rgba(248,250,252,0.01)" stroke="#f8fafc" strokeWidth="2" {...handleProps('nailRight')} />
+          </svg>
+        </div>
+        <div className={`mt-2 text-[10px] font-black uppercase tracking-widest ${isDragging ? 'text-emerald-300' : 'text-slate-500'}`}>
+          {measured ? `${measured.mm}mm / size ${measured.size}` : 'Adjust guides'}
+        </div>
+      </div>
+    );
   };
 
   const statusClass = status.type === 'success'
@@ -445,11 +629,11 @@ function AdminPortal() {
             value={searchEmail}
             onChange={(event) => setSearchEmail(event.target.value)}
             placeholder="customer@email.com"
-            className="h-14 flex-1 bg-black/40 border border-slate-800 rounded-2xl px-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70"
+            className="h-12 flex-1 bg-black/40 border border-slate-800 rounded-2xl px-4 text-sm font-bold text-white outline-none focus:border-emerald-500/70"
           />
           <button
             disabled={loading}
-            className="h-14 px-6 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95"
+            className="h-12 px-6 rounded-2xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95"
           >
             <Search className="w-4 h-4" /> Search
           </button>
@@ -476,9 +660,10 @@ function AdminPortal() {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] text-left">
+                <table className="w-full min-w-[1120px] text-left">
                   <thead className="text-[9px] uppercase tracking-widest text-slate-500 bg-black/25">
                     <tr>
+                      <th className="px-4 py-3">Photo</th>
                       <th className="px-4 py-3">Finger</th>
                       <th className="px-4 py-3">MM</th>
                       <th className="px-4 py-3">Size</th>
@@ -491,6 +676,9 @@ function AdminPortal() {
                       const draft = drafts[measurement.id] || {};
                       return (
                         <tr key={measurement.id} className="border-t border-slate-800/80">
+                          <td className="px-4 py-3 align-top">
+                            {renderMeasurementPhotoEditor(measurement)}
+                          </td>
                           <td className="px-4 py-3">
                             <div className="font-black text-sm">{measurement.finger_name}</div>
                             <div className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{measurement.hand_side}</div>

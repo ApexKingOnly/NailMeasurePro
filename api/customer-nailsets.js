@@ -2,7 +2,9 @@ import { createClient } from '@supabase/supabase-js';
 
 const DEFAULT_SESSIONS_TABLE = 'customer_nail_sessions';
 const DEFAULT_MEASUREMENTS_TABLE = 'customer_nail_measurements';
+const DEFAULT_IMAGES_BUCKET = 'customer-nail-images';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_BASE64_LENGTH = 7_000_000;
 
 const parseRequestBody = (body) => {
   if (!body) return {};
@@ -17,17 +19,57 @@ const toFiniteNumber = (value) => {
   return Number.isFinite(number) ? number : null;
 };
 
+const sanitizePathSegment = (value, fallback) => (
+  String(value || fallback)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || fallback
+);
+
+const parseImage = (image) => {
+  const raw = String(image || '');
+  const match = raw.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+  const mime = match?.[1] || 'image/jpeg';
+  const base64 = match?.[2] || raw;
+
+  if (!base64 || base64.length > MAX_BASE64_LENGTH || !/^[a-zA-Z0-9+/=\s]+$/.test(base64)) {
+    return null;
+  }
+
+  const buffer = Buffer.from(base64.replace(/\s/g, ''), 'base64');
+  if (!buffer.length) return null;
+
+  const extension = mime.includes('png')
+    ? 'png'
+    : mime.includes('webp')
+      ? 'webp'
+      : 'jpg';
+
+  return { buffer, mime, extension };
+};
+
+const normalizeFrame = (frame) => {
+  const width = toFiniteNumber(frame?.width);
+  const height = toFiniteNumber(frame?.height);
+  const zoom = toFiniteNumber(frame?.zoom) || 1;
+  if (!width || !height) return null;
+  return { width, height, zoom };
+};
+
 const getSupabaseConfig = () => {
   const url = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const sessionsTable = process.env.CUSTOMER_NAIL_SESSIONS_TABLE || DEFAULT_SESSIONS_TABLE;
   const measurementsTable = process.env.CUSTOMER_NAIL_MEASUREMENTS_TABLE || DEFAULT_MEASUREMENTS_TABLE;
+  const imagesBucket = process.env.CUSTOMER_NAIL_IMAGES_BUCKET || DEFAULT_IMAGES_BUCKET;
 
   if (!url || !serviceRoleKey) {
-    return { configured: false, sessionsTable, measurementsTable };
+    return { configured: false, sessionsTable, measurementsTable, imagesBucket };
   }
 
-  return { configured: true, url, serviceRoleKey, sessionsTable, measurementsTable };
+  return { configured: true, url, serviceRoleKey, sessionsTable, measurementsTable, imagesBucket };
 };
 
 const normalizeMeasurement = (measurement, index) => {
@@ -48,6 +90,11 @@ const normalizeMeasurement = (measurement, index) => {
     quarter_pixels: toFiniteNumber(measurement?.quarterPixels),
     nail_pixels: toFiniteNumber(measurement?.nailPixels),
     guide: measurement?.guide || null,
+    frame: normalizeFrame(measurement?.frame),
+    captured_at: Number.isNaN(Date.parse(measurement?.capturedAt))
+      ? new Date().toISOString()
+      : new Date(measurement.capturedAt).toISOString(),
+    image: measurement?.image || null,
   };
 };
 
@@ -116,10 +163,35 @@ export default async function handler(req, res) {
       throw new Error(`Customer session save failed: ${sessionUpsert.error.message}`);
     }
 
-    const measurementRows = measurements.map((measurement) => ({
-      ...measurement,
-      session_id: sessionId,
-      updated_at: now,
+    const sessionPath = sanitizePathSegment(sessionId, 'session');
+    const measurementRows = await Promise.all(measurements.map(async (measurement) => {
+      const { image, ...row } = measurement;
+      const fingerPath = sanitizePathSegment(row.finger_name, 'finger');
+      const parsedImage = parseImage(image);
+
+      if (parsedImage) {
+        const imagePath = `${sessionPath}/${String(row.shot_number).padStart(2, '0')}-${fingerPath}.${parsedImage.extension}`;
+        const upload = await supabase.storage
+          .from(config.imagesBucket)
+          .upload(imagePath, parsedImage.buffer, {
+            contentType: parsedImage.mime,
+            upsert: true,
+          });
+
+        if (upload.error) {
+          throw new Error(`Customer nail image upload failed: ${upload.error.message}`);
+        }
+
+        row.image_bucket = config.imagesBucket;
+        row.image_path = imagePath;
+        row.image_mime = parsedImage.mime;
+      }
+
+      return {
+        ...row,
+        session_id: sessionId,
+        updated_at: now,
+      };
     }));
 
     const measurementsUpsert = await supabase
