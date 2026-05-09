@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { Camera, ShieldAlert, Scan, CheckCircle2, ChevronLeft, ChevronRight, Mail, Sparkles } from 'lucide-react'
 import { getFullSizing, calculateFingerWidthPixels, calculateMM, mmToNailSize } from './utils/sizing'
 import AdminPortal from './AdminPortal.jsx'
+import BrandDecor from './BrandArtwork.jsx'
 
 // V30: Explicit 10-Finger Sequence Mapping
 // L-Pinky(20), L-Ring(16), L-Mid(12), L-Index(8), L-Thumb(4)
@@ -1458,6 +1459,7 @@ function App() {
 
   if (currentStep === 'finish') return (
     <div className="brand-shell fixed inset-0 flex flex-col items-center justify-center p-6 text-center overflow-y-auto">
+       <BrandDecor />
        <CheckCircle2 className="w-16 h-16 brand-accent mb-4" />
        <div className="brand-wordmark-small text-5xl mb-1">Nails By Liz</div>
        <h2 className="text-2xl font-black brand-heading mb-2 uppercase">Sizing Report</h2>
@@ -1523,6 +1525,7 @@ function App() {
 
   if (currentStep === 'welcome') return (
     <div className="brand-shell fixed inset-0 flex flex-col items-center justify-center p-8 sm:p-12 overflow-hidden">
+       <BrandDecor />
        <div className="brand-icon-card relative z-10 w-24 h-24 flex items-center justify-center mb-8 shadow-inner">
           <Sparkles className="w-10 h-10 brand-accent" />
        </div>

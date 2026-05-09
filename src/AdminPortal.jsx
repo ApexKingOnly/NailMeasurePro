@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronRight, KeyRound, LogOut, Power, Save, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { calculateMM, mmToNailSize } from './utils/sizing.js';
+import BrandDecor from './BrandArtwork.jsx';
 
 const ADMIN_TOKEN_KEY = 'nailmeasure_admin_token';
 const ADMIN_NAME_KEY = 'nailmeasure_admin_name';
@@ -541,6 +542,7 @@ function AdminPortal() {
   if (!token) {
     return (
       <div className="brand-shell min-h-screen flex items-center justify-center p-6">
+        <BrandDecor />
         <form onSubmit={login} className="brand-panel w-full max-w-sm p-7 shadow-2xl">
           <div className="brand-icon-card w-14 h-14 flex items-center justify-center mb-6">
             <ShieldCheck className="w-7 h-7 brand-accent" />
@@ -586,6 +588,7 @@ function AdminPortal() {
 
   return (
     <div className="brand-admin-shell p-4 sm:p-8">
+      <BrandDecor soft />
       <div className="mx-auto max-w-6xl">
         <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 border-b brand-divider pb-6">
           <div>

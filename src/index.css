@@ -116,9 +116,12 @@
 }
 
 .brand-admin-shell {
+  position: relative;
+  isolation: isolate;
   background:
     linear-gradient(180deg, var(--liz-cream) 0%, #fff3e8 48%, var(--liz-blush-soft) 100%);
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 .brand-assist-shell {
@@ -367,4 +370,64 @@
   border-color: rgba(201, 165, 106, 0.52) !important;
   background: rgba(201, 165, 106, 0.2) !important;
   color: var(--liz-cocoa) !important;
+}
+
+.brand-artwork {
+  position: absolute !important;
+  z-index: 0 !important;
+  pointer-events: none;
+  color: var(--liz-cocoa);
+  opacity: 0.36;
+  filter: drop-shadow(0 16px 30px rgba(111, 53, 31, 0.08));
+}
+
+.brand-artwork svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.brand-artwork-bottle {
+  width: 300px;
+  left: -76px;
+  bottom: -24px;
+  transform: rotate(-7deg);
+}
+
+.brand-artwork-brush {
+  width: 310px;
+  right: -54px;
+  top: 18px;
+  transform: rotate(3deg);
+}
+
+.brand-artwork-soft {
+  opacity: 0.2;
+}
+
+.brand-admin-shell .brand-artwork-bottle {
+  left: -82px;
+  bottom: 30px;
+}
+
+.brand-admin-shell .brand-artwork-brush {
+  right: -80px;
+  top: 28px;
+}
+
+@media (max-width: 640px) {
+  .brand-artwork-bottle {
+    width: 220px;
+    left: -118px;
+    bottom: 76px;
+    opacity: 0.28;
+  }
+
+  .brand-artwork-brush {
+    width: 210px;
+    right: -98px;
+    top: 16px;
+    opacity: 0.24;
+  }
 }
