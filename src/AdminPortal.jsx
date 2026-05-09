@@ -4,6 +4,7 @@ import { ChevronRight, LogOut, Power, Save, Search, ShieldCheck, UserPlus, Users
 const ADMIN_TOKEN_KEY = 'nailmeasure_admin_token';
 const ADMIN_NAME_KEY = 'nailmeasure_admin_name';
 const LEGACY_ADMIN_EMAIL_KEY = 'nailmeasure_admin_email';
+const DEFAULT_ADMIN_NAME = 'admin';
 
 const getStoredValue = (key) => {
   try {
@@ -38,8 +39,8 @@ const formatDate = (value) => {
 
 function AdminPortal() {
   const [token, setToken] = useState(() => getStoredValue(ADMIN_TOKEN_KEY));
-  const [adminName, setAdminName] = useState(() => getStoredValue(ADMIN_NAME_KEY) || getStoredValue(LEGACY_ADMIN_EMAIL_KEY));
-  const [loginName, setLoginName] = useState(() => getStoredValue(ADMIN_NAME_KEY) || getStoredValue(LEGACY_ADMIN_EMAIL_KEY));
+  const [adminName, setAdminName] = useState(() => getStoredValue(ADMIN_NAME_KEY));
+  const [loginName, setLoginName] = useState(() => getStoredValue(ADMIN_NAME_KEY) || DEFAULT_ADMIN_NAME);
   const [password, setPassword] = useState('');
   const [searchEmail, setSearchEmail] = useState('');
   const [sessions, setSessions] = useState([]);
@@ -83,6 +84,7 @@ function AdminPortal() {
   };
 
   useEffect(() => {
+    removeStoredValue(LEGACY_ADMIN_EMAIL_KEY);
     if (!token) return;
 
     loadAdminAccounts(token).catch((error) => {
