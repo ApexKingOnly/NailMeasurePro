@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronRight, LogOut, Power, Save, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { ChevronRight, KeyRound, LogOut, Power, Save, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { calculateMM, mmToNailSize } from './utils/sizing.js';
 
 const ADMIN_TOKEN_KEY = 'nailmeasure_admin_token';
@@ -84,6 +84,7 @@ function AdminPortal() {
   const [accounts, setAccounts] = useState([]);
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountPassword, setNewAccountPassword] = useState('');
+  const [accountPasswordDrafts, setAccountPasswordDrafts] = useState({});
   const [status, setStatus] = useState({ type: 'idle', text: '' });
   const [loading, setLoading] = useState(false);
 
@@ -96,6 +97,7 @@ function AdminPortal() {
     setSessions([]);
     setDrafts({});
     setAccounts([]);
+    setAccountPasswordDrafts({});
     setStatus({ type: 'idle', text: '' });
   };
 
@@ -188,6 +190,53 @@ function AdminPortal() {
       setNewAccountName('');
       setNewAccountPassword('');
       setStatus({ type: 'success', text: 'Admin account created' });
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resetAdminPassword = async (account) => {
+    const nextPassword = accountPasswordDrafts[account.id] || '';
+
+    if (nextPassword.length < 8) {
+      setStatus({ type: 'error', text: 'Password must be at least 8 characters' });
+      return;
+    }
+
+    setLoading(true);
+    setStatus({ type: 'loading', text: 'Resetting admin password' });
+
+    try {
+      const response = await fetch('/api/admin-accounts', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ accountId: account.id, password: nextPassword }),
+      });
+      const data = await response.json();
+
+      if (response.status === 401) {
+        logout();
+        throw new Error(data.error || 'Admin session expired');
+      }
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error || 'Admin password reset failed');
+      }
+
+      setAccounts(prev => prev.map(item => (
+        item.id === data.account.id ? data.account : item
+      )));
+      setAccountPasswordDrafts(prev => {
+        const next = { ...prev };
+        delete next[account.id];
+        return next;
+      });
+      setStatus({ type: 'success', text: account.adminName === adminName ? 'Password reset; use it next login' : 'Admin password reset' });
     } catch (error) {
       setStatus({ type: 'error', text: error.message });
     } finally {
@@ -582,13 +631,14 @@ function AdminPortal() {
           </form>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-left">
+            <table className="w-full min-w-[900px] text-left">
               <thead className="text-[9px] uppercase tracking-widest text-slate-500 bg-black/25">
                 <tr>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Last Login</th>
                   <th className="px-4 py-3">Created By</th>
+                  <th className="px-4 py-3">Password</th>
                   <th className="px-4 py-3 text-right">Action</th>
                 </tr>
               </thead>
@@ -606,6 +656,29 @@ function AdminPortal() {
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-400 font-bold">{formatDate(account.lastLoginAt)}</td>
                     <td className="px-4 py-3 text-xs text-slate-400 font-bold">{account.createdBy || 'System'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={accountPasswordDrafts[account.id] || ''}
+                          onChange={(event) => setAccountPasswordDrafts(prev => ({
+                            ...prev,
+                            [account.id]: event.target.value,
+                          }))}
+                          placeholder="new password"
+                          className="h-10 w-44 bg-black/40 border border-slate-800 rounded-xl px-3 text-xs font-bold outline-none focus:border-emerald-500/70"
+                          autoComplete="new-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => resetAdminPassword(account)}
+                          disabled={loading || !(accountPasswordDrafts[account.id] || '').length}
+                          className="h-10 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/35 text-emerald-300 text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-2 active:scale-95 disabled:opacity-40"
+                        >
+                          <KeyRound className="w-4 h-4" /> Reset
+                        </button>
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
