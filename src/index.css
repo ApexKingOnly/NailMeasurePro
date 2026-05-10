@@ -372,62 +372,109 @@
   color: var(--liz-cocoa) !important;
 }
 
-.brand-artwork {
+.brand-card-art-layer {
   position: absolute !important;
+  inset: 0;
   z-index: 0 !important;
   pointer-events: none;
-  color: var(--liz-cocoa);
-  opacity: 0.36;
-  filter: drop-shadow(0 16px 30px rgba(111, 53, 31, 0.08));
+  overflow: hidden;
 }
 
-.brand-artwork svg {
+.brand-card-art-layer-soft {
+  opacity: 0.72;
+}
+
+.brand-card-art {
+  position: absolute;
   display: block;
-  width: 100%;
   height: auto;
-  overflow: visible;
+  user-select: none;
+  mix-blend-mode: normal;
+  filter: none;
 }
 
-.brand-artwork-bottle {
+.brand-card-art-brush {
   width: 300px;
-  left: -76px;
-  bottom: -24px;
-  transform: rotate(-7deg);
+  right: -42px;
+  top: 2px;
+  opacity: 0.88;
 }
 
-.brand-artwork-brush {
-  width: 310px;
-  right: -54px;
-  top: 18px;
-  transform: rotate(3deg);
+.brand-card-art-bottle {
+  width: 260px;
+  left: -58px;
+  bottom: 18px;
+  opacity: 0.82;
 }
 
-.brand-artwork-soft {
+.brand-card-art-nails-top {
+  width: 170px;
+  right: -56px;
+  top: -34px;
+  opacity: 0.34;
+}
+
+.brand-card-art-nails-bottom {
+  width: 180px;
+  left: -70px;
+  bottom: -22px;
+  opacity: 0.28;
+}
+
+.brand-admin-shell .brand-card-art-brush {
+  width: 330px;
+  right: -36px;
+  top: 6px;
+  opacity: 0.68;
+}
+
+.brand-admin-shell .brand-card-art-bottle {
+  width: 270px;
+  left: -58px;
+  bottom: 40px;
+  opacity: 0.58;
+}
+
+.brand-admin-shell .brand-card-art-nails-top {
+  width: 200px;
+  right: -58px;
+  top: -36px;
+  opacity: 0.24;
+}
+
+.brand-admin-shell .brand-card-art-nails-bottom {
+  width: 190px;
+  left: -80px;
+  bottom: -18px;
   opacity: 0.2;
 }
 
-.brand-admin-shell .brand-artwork-bottle {
-  left: -82px;
-  bottom: 30px;
-}
-
-.brand-admin-shell .brand-artwork-brush {
-  right: -80px;
-  top: 28px;
-}
-
 @media (max-width: 640px) {
-  .brand-artwork-bottle {
-    width: 220px;
-    left: -118px;
-    bottom: 76px;
-    opacity: 0.28;
+  .brand-card-art-brush {
+    width: 170px;
+    right: -54px;
+    top: 20px;
+    opacity: 0.64;
   }
 
-  .brand-artwork-brush {
-    width: 210px;
-    right: -98px;
-    top: 16px;
+  .brand-card-art-bottle {
+    width: 170px;
+    left: -74px;
+    bottom: 80px;
+    opacity: 0.68;
+  }
+
+  .brand-card-art-nails-top {
+    width: 118px;
+    right: -42px;
+    top: -14px;
     opacity: 0.24;
+  }
+
+  .brand-card-art-nails-bottom {
+    width: 130px;
+    left: -58px;
+    bottom: 6px;
+    opacity: 0.2;
   }
 }
