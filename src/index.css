@@ -481,3 +481,39 @@
     opacity: 0.2;
   }
 }
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .welcome-screen {
+    justify-content: flex-start !important;
+    padding: 14px 18px 20px !important;
+  }
+
+  .welcome-icon,
+  .welcome-measure-list {
+    display: none !important;
+  }
+
+  .welcome-logo {
+    font-size: clamp(2.7rem, 8vw, 4.2rem);
+    margin-bottom: 4px !important;
+    max-width: min(100%, 520px);
+  }
+
+  .welcome-tagline {
+    margin-bottom: 14px !important;
+  }
+
+  .brand-card-art-brush {
+    width: 170px;
+    right: -54px;
+    top: -12px;
+    opacity: 0.42;
+  }
+
+  .brand-card-art-bottle {
+    width: 170px;
+    left: -70px;
+    bottom: 16px;
+    opacity: 0.48;
+  }
+}

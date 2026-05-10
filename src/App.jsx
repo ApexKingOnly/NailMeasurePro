@@ -2079,15 +2079,15 @@ function App() {
   )
 
   if (currentStep === 'welcome') return (
-    <div className="brand-shell fixed inset-0 flex flex-col items-center justify-start sm:justify-center p-6 sm:p-12 overflow-y-auto overflow-x-hidden">
+    <div className="welcome-screen brand-shell fixed inset-0 flex flex-col items-center justify-start sm:justify-center p-6 sm:p-12 overflow-y-auto overflow-x-hidden">
        <BrandDecor />
-       <div className="brand-icon-card relative z-10 w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center mb-6 sm:mb-8 shadow-inner">
+       <div className="welcome-icon brand-icon-card relative z-10 w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center mb-6 sm:mb-8 shadow-inner">
           <Sparkles className="w-10 h-10 brand-accent" />
        </div>
-       <h1 className="brand-logo mb-3">Nails By Liz</h1>
-       <p className="brand-eyebrow font-bold tracking-widest text-[10px] uppercase mb-6 sm:mb-10 opacity-80 text-center">Professional Nail Art Services</p>
+       <h1 className="welcome-logo brand-logo mb-3">Nails By Liz</h1>
+       <p className="welcome-tagline brand-eyebrow font-bold tracking-widest text-[10px] uppercase mb-6 sm:mb-10 opacity-80 text-center">Professional Nail Art Services</p>
        
-       <div className="brand-panel hidden sm:block w-full max-w-[300px] sm:max-w-sm p-5 sm:p-8 mb-8">
+       <div className="welcome-measure-list brand-panel hidden sm:block w-full max-w-[300px] sm:max-w-sm p-5 sm:p-8 mb-8">
           <div className="flex items-center gap-4 mb-4">
              <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: BRAND_GUIDE.coin }} />
              <span className="text-xs brand-heading font-bold uppercase tracking-widest">Measure all 10 nails</span>
