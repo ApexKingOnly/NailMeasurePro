@@ -1,10 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
+import crypto from 'crypto';
 
 const DEFAULT_SESSIONS_TABLE = 'customer_nail_sessions';
 const DEFAULT_MEASUREMENTS_TABLE = 'customer_nail_measurements';
 const DEFAULT_IMAGES_BUCKET = 'customer-nail-images';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_BASE64_LENGTH = 7_000_000;
+const ACCESS_CODE_PATTERN = /^[a-zA-Z0-9-]{6,24}$/;
 
 const parseRequestBody = (body) => {
   if (!body) return {};
@@ -13,6 +15,18 @@ const parseRequestBody = (body) => {
 };
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
+const normalizeAccessCode = (value) => String(value || '').trim().replace(/\s+/g, '');
+
+const hashCustomerAccessCode = (email, accessCode) => {
+  const normalizedCode = normalizeAccessCode(accessCode);
+  if (!ACCESS_CODE_PATTERN.test(normalizedCode)) return null;
+  const secret = process.env.CUSTOMER_ACCESS_SECRET || process.env.ADMIN_SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'nailmeasure-local';
+  return crypto
+    .createHash('sha256')
+    .update(`${secret}:${normalizeEmail(email)}:${normalizedCode}`)
+    .digest('hex');
+};
 
 const toFiniteNumber = (value) => {
   const number = Number(value);
@@ -55,7 +69,15 @@ const normalizeFrame = (frame) => {
   const height = toFiniteNumber(frame?.height);
   const zoom = toFiniteNumber(frame?.zoom) || 1;
   if (!width || !height) return null;
-  return { width, height, zoom };
+
+  return {
+    width,
+    height,
+    zoom,
+    camera: frame?.camera || null,
+    quality: frame?.quality || null,
+    fitContext: frame?.fitContext || null,
+  };
 };
 
 const getSupabaseConfig = () => {
@@ -72,11 +94,15 @@ const getSupabaseConfig = () => {
   return { configured: true, url, serviceRoleKey, sessionsTable, measurementsTable, imagesBucket };
 };
 
-const normalizeMeasurement = (measurement, index) => {
+const normalizeMeasurement = (measurement, index, context = {}) => {
   const fingerName = String(measurement?.fingerName || '').trim();
   const size = String(measurement?.size || '').trim();
   const mm = toFiniteNumber(measurement?.mm);
   const shotNumber = toFiniteNumber(measurement?.shotNumber) || index + 1;
+  const frame = normalizeFrame(measurement?.frame);
+
+  if (frame && context.accessHash) frame.customerAccessHash = context.accessHash;
+  if (frame && context.fitContext && !frame.fitContext) frame.fitContext = context.fitContext;
 
   if (!fingerName || !size || mm === null || mm <= 0) return null;
 
@@ -90,7 +116,7 @@ const normalizeMeasurement = (measurement, index) => {
     quarter_pixels: toFiniteNumber(measurement?.quarterPixels),
     nail_pixels: toFiniteNumber(measurement?.nailPixels),
     guide: measurement?.guide || null,
-    frame: normalizeFrame(measurement?.frame),
+    frame,
     captured_at: Number.isNaN(Date.parse(measurement?.capturedAt))
       ? new Date().toISOString()
       : new Date(measurement.capturedAt).toISOString(),
@@ -118,14 +144,16 @@ export default async function handler(req, res) {
     const customerEmailNormalized = normalizeEmail(customerEmail);
     const sessionId = String(body.sessionId || '').trim();
     const status = String(body.status || 'draft').trim().toLowerCase() === 'complete' ? 'complete' : 'draft';
+    const accessHash = hashCustomerAccessCode(customerEmailNormalized, body.accessCode);
+    const fitContext = body.fitContext || null;
     const measurements = Array.isArray(body.measurements)
-      ? body.measurements.map(normalizeMeasurement).filter(Boolean)
+      ? body.measurements.map((measurement, index) => normalizeMeasurement(measurement, index, { accessHash, fitContext })).filter(Boolean)
       : [];
 
-    if (!sessionId || !EMAIL_PATTERN.test(customerEmailNormalized) || !measurements.length) {
+    if (!sessionId || !EMAIL_PATTERN.test(customerEmailNormalized) || !accessHash || !measurements.length) {
       res.status(400).json({
         ok: false,
-        error: 'Valid sessionId, customerEmail, and at least one measurement are required',
+        error: 'Valid sessionId, customerEmail, accessCode, and at least one measurement are required',
       });
       return;
     }

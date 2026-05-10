@@ -214,6 +214,7 @@
 }
 
 .brand-input,
+.brand-select,
 .brand-admin-shell input {
   background: rgba(255, 255, 255, 0.72) !important;
   border-color: var(--liz-border) !important;
@@ -228,6 +229,7 @@
 }
 
 .brand-input:focus,
+.brand-select:focus,
 .brand-admin-shell input:focus {
   border-color: rgba(201, 165, 106, 0.85) !important;
   box-shadow: 0 0 0 3px rgba(201, 180, 220, 0.25);
@@ -342,6 +344,7 @@
 
 .brand-assist-header,
 .brand-assist-footer {
+  position: relative;
   background: linear-gradient(180deg, rgba(255, 248, 238, 0.97), rgba(248, 238, 227, 0.98)) !important;
   border-color: var(--liz-border) !important;
 }

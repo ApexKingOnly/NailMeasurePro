@@ -6,6 +6,24 @@
 
 const QUARTER_MM = 24.26;
 
+export const NAIL_FIT_PROFILES = [
+  { key: 'standard', label: 'Standard fit', adjustmentMm: 0 },
+  { key: 'runs-narrow', label: 'Runs narrow', adjustmentMm: 0.5 },
+  { key: 'runs-wide', label: 'Runs wide', adjustmentMm: -0.5 },
+];
+
+export const NAIL_BED_CURVES = [
+  { key: 'flat', label: 'Flat nail bed', adjustmentMm: 0.5 },
+  { key: 'medium', label: 'Medium curve', adjustmentMm: 1.0 },
+  { key: 'rounded', label: 'Rounded nail bed', adjustmentMm: 1.5 },
+];
+
+export const DEFAULT_FIT_CONTEXT = {
+  productProfile: 'standard',
+  nailBedCurve: 'medium',
+  manufacturer: 'Nails By Liz default',
+};
+
 // Standard sizing chart (mm -> Size ID)
 // Based on typical press-on nail width ranges
 const SIZING_CHART = [
@@ -22,6 +40,33 @@ const SIZING_CHART = [
   { size: '9', mm: 7.0 }
 ];
 
+const findFitProfile = (key) => (
+  NAIL_FIT_PROFILES.find(profile => profile.key === key) || NAIL_FIT_PROFILES[0]
+);
+
+const findNailBedCurve = (key) => (
+  NAIL_BED_CURVES.find(curve => curve.key === key) || NAIL_BED_CURVES[1]
+);
+
+export const normalizeFitContext = (fitContext = {}) => ({
+  manufacturer: String(fitContext.manufacturer || DEFAULT_FIT_CONTEXT.manufacturer).trim().slice(0, 80) || DEFAULT_FIT_CONTEXT.manufacturer,
+  productProfile: findFitProfile(fitContext.productProfile).key,
+  nailBedCurve: findNailBedCurve(fitContext.nailBedCurve).key,
+});
+
+export const getFitAdjustmentMM = (fitContext = DEFAULT_FIT_CONTEXT) => {
+  const normalized = normalizeFitContext(fitContext);
+  const profile = findFitProfile(normalized.productProfile);
+  const curve = findNailBedCurve(normalized.nailBedCurve);
+  return profile.adjustmentMm + curve.adjustmentMm;
+};
+
+export const getAdjustedNailWidthMM = (mm, fitContext = DEFAULT_FIT_CONTEXT) => {
+  const width = Number(mm);
+  if (!Number.isFinite(width) || width <= 0) return 0;
+  return width + getFitAdjustmentMM(fitContext);
+};
+
 /**
  * Calculates millimeters from pixel width based on quarter calibration
  */
@@ -33,20 +78,18 @@ export const calculateMM = (pixelWidth, quarterPixels) => {
 
 /**
  * Maps MM to nearest press-on nail size
- * Includes a mandatory +1mm curvature buffer
+ * Includes a product-fit and nail-bed curvature adjustment.
  */
-export const mmToNailSize = (mm) => {
+export const mmToNailSize = (mm, fitContext = DEFAULT_FIT_CONTEXT) => {
   if (!mm || mm < 5) return 'N/A';
-  
-  // Add 1.0mm buffer for nail curvature (flat-to-curved correction)
-  const bufferedMM = mm + 1.0;
+  const adjustedMM = getAdjustedNailWidthMM(mm, fitContext);
 
   // Find the closest size or the next size up
   let bestMatch = SIZING_CHART[0];
-  let minDiff = Math.abs(bufferedMM - SIZING_CHART[0].mm);
+  let minDiff = Math.abs(adjustedMM - SIZING_CHART[0].mm);
 
   for (let i = 1; i < SIZING_CHART.length; i++) {
-    const diff = Math.abs(bufferedMM - SIZING_CHART[i].mm);
+    const diff = Math.abs(adjustedMM - SIZING_CHART[i].mm);
     if (diff < minDiff) {
       minDiff = diff;
       bestMatch = SIZING_CHART[i];
@@ -77,9 +120,9 @@ export const calculateFingerWidthPixels = (hand, fingerIndex, canvasWidth, canva
   return Number.isFinite(phalanxLength) ? phalanxLength * 0.85 : 0;
 };
 
-export const getFullSizing = (pixelWidth, quarterPixels, handLandmarks, canvasWidth, canvasHeight) => {
+export const getFullSizing = (pixelWidth, quarterPixels, handLandmarks, canvasWidth, canvasHeight, fitContext = DEFAULT_FIT_CONTEXT) => {
   const mm = calculateMM(pixelWidth, quarterPixels);
-  const size = mmToNailSize(mm);
+  const size = mmToNailSize(mm, fitContext);
   
   let guidance = "Position Target...";
   let isStable = false;

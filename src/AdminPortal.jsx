@@ -59,7 +59,7 @@ const cloneGuide = (guide) => {
   };
 };
 
-const getGuideMeasurement = (guide) => {
+const getGuideMeasurement = (guide, fitContext = null) => {
   if (!guide?.quarter || !guide?.nail?.left || !guide?.nail?.right) return null;
   const quarterPixels = Number(guide.quarter.r) * 2;
   const nailPixels = Math.hypot(
@@ -67,7 +67,7 @@ const getGuideMeasurement = (guide) => {
     Number(guide.nail.right.y) - Number(guide.nail.left.y),
   );
   const mm = calculateMM(nailPixels, quarterPixels);
-  const size = mmToNailSize(mm);
+  const size = mmToNailSize(mm, fitContext || undefined);
 
   if (!Number.isFinite(mm) || mm <= 0 || size === 'N/A') return null;
 
@@ -362,7 +362,7 @@ function AdminPortal() {
       guide.nail.right = point;
     }
 
-    const measurementResult = getGuideMeasurement(guide);
+    const measurementResult = getGuideMeasurement(guide, measurement.frame?.fitContext);
 
     setDrafts(prev => ({
       ...prev,
@@ -465,7 +465,7 @@ function AdminPortal() {
     const draft = drafts[measurement.id] || {};
     const frame = measurement.frame;
     const guide = draft.guide || measurement.guide;
-    const measured = getGuideMeasurement(guide);
+    const measured = getGuideMeasurement(guide, measurement.frame?.fitContext);
 
     if (!measurement.signed_image_url || !frame?.width || !frame?.height || !guide?.quarter || !guide?.nail) {
       return (

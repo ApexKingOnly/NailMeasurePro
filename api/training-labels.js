@@ -99,7 +99,15 @@ const normalizeFrame = (frame) => {
   const height = toFiniteNumber(frame?.height);
   const zoom = toFiniteNumber(frame?.zoom) || 1;
   if (!width || !height) return null;
-  return { width, height, zoom };
+
+  return {
+    width,
+    height,
+    zoom,
+    camera: frame?.camera || null,
+    quality: frame?.quality || null,
+    fitContext: frame?.fitContext || null,
+  };
 };
 
 const getSupabaseConfig = () => {

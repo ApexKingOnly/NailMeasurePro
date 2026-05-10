@@ -1,6 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Camera, ShieldAlert, Scan, CheckCircle2, ChevronLeft, ChevronRight, Mail, Sparkles } from 'lucide-react'
-import { getFullSizing, calculateFingerWidthPixels, calculateMM, mmToNailSize } from './utils/sizing'
+import { Camera, ShieldAlert, Scan, CheckCircle2, ChevronLeft, ChevronRight, KeyRound, Mail, RefreshCcw, Sparkles } from 'lucide-react'
+import {
+  DEFAULT_FIT_CONTEXT,
+  NAIL_BED_CURVES,
+  NAIL_FIT_PROFILES,
+  getAdjustedNailWidthMM,
+  getFullSizing,
+  normalizeFitContext,
+  calculateFingerWidthPixels,
+  calculateMM,
+  mmToNailSize,
+} from './utils/sizing'
 import AdminPortal from './AdminPortal.jsx'
 import BrandDecor from './BrandArtwork.jsx'
 
@@ -15,12 +25,20 @@ const DEFAULT_NAIL_BOX = { x: 0.275, y: 0.43625, w: 0.45, h: 0.4375 };
 const AI_GUIDE_ENDPOINT = '/api/vision-detect';
 const TRAINING_LABEL_ENDPOINT = '/api/training-labels';
 const CUSTOMER_NAILSET_ENDPOINT = '/api/customer-nailsets';
+const CUSTOMER_LOGIN_ENDPOINT = '/api/customer-login';
 const NAIL_EDGE_HANDLE_DROP = 112;
 const ASSIST_FRAME_ZOOM = 1.25;
-const APP_VERSION = 'training-labels-v1';
+const APP_VERSION = 'capture-quality-v1';
 const TRAINING_STATUS_IDLE = { status: 'idle', label: '' };
 const CUSTOMER_SAVE_STATUS_IDLE = { status: 'idle', label: '' };
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const CUSTOMER_ACCESS_CODE_PATTERN = /^[a-zA-Z0-9-]{6,24}$/;
+const MIN_VIDEO_WIDTH = 1280;
+const MIN_VIDEO_HEIGHT = 720;
+const MIN_QUARTER_PIXELS = 170;
+const IDEAL_QUARTER_PIXELS = 220;
+const MIN_CAPTURE_SHORT_EDGE = 720;
+const MAX_CAPTURE_LONG_EDGE = 1800;
 const BRAND_GUIDE = {
   coin: '#c9a56a',
   coinRadius: '#c9b4dc',
@@ -32,6 +50,157 @@ const BRAND_GUIDE = {
 };
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+const sanitizeForJson = (value, depth = 0) => {
+  if (depth > 4 || value === undefined || typeof value === 'function') return undefined;
+  if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) return value.map(item => sanitizeForJson(item, depth + 1)).filter(item => item !== undefined).slice(0, 40);
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .map(([key, entry]) => [key, sanitizeForJson(entry, depth + 1)])
+        .filter(([, entry]) => entry !== undefined)
+    );
+  }
+  return String(value);
+};
+
+const getVideoTrackMetadata = (stream, preferredFacingMode = 'environment') => {
+  const track = stream?.getVideoTracks?.()?.[0];
+  if (!track) return null;
+
+  let settings = {};
+  let capabilities = {};
+  let constraints = {};
+
+  try { settings = sanitizeForJson(track.getSettings?.() || {}) || {}; } catch (error) { settings = {}; }
+  try { capabilities = sanitizeForJson(track.getCapabilities?.() || {}) || {}; } catch (error) { capabilities = {}; }
+  try { constraints = sanitizeForJson(track.getConstraints?.() || {}) || {}; } catch (error) { constraints = {}; }
+
+  return {
+    label: track.label || '',
+    kind: track.kind || 'video',
+    readyState: track.readyState || '',
+    preferredFacingMode,
+    facingMode: settings.facingMode || '',
+    width: settings.width || null,
+    height: settings.height || null,
+    aspectRatio: settings.aspectRatio || null,
+    frameRate: settings.frameRate || null,
+    deviceIdPresent: Boolean(settings.deviceId),
+    groupIdPresent: Boolean(settings.groupId),
+    supports: {
+      zoom: Boolean(capabilities.zoom),
+      torch: Boolean(capabilities.torch),
+      focusMode: Boolean(capabilities.focusMode),
+      exposureMode: Boolean(capabilities.exposureMode),
+    },
+    settings,
+    capabilities,
+    constraints,
+  };
+};
+
+const buildFrameCameraMetadata = (video, streamMetadata) => ({
+  track: streamMetadata || null,
+  video: {
+    width: video?.videoWidth || null,
+    height: video?.videoHeight || null,
+  },
+  viewport: {
+    width: Math.round(window.innerWidth || 0),
+    height: Math.round(window.innerHeight || 0),
+    devicePixelRatio: Number(window.devicePixelRatio || 1),
+  },
+  userAgent: window.navigator?.userAgent || '',
+  capturedAt: new Date().toISOString(),
+});
+
+const getCaptureQuality = (frame) => {
+  if (!frame?.width || !frame?.height || !frame?.guide?.quarter) {
+    return {
+      status: 'check',
+      label: 'QUALITY CHECK',
+      score: 0,
+      blocking: ['Frame unavailable'],
+      warnings: ['Capture frame unavailable'],
+      metrics: {},
+    };
+  }
+
+  const videoWidth = Number(frame.camera?.video?.width || frame.camera?.track?.width || frame.width);
+  const videoHeight = Number(frame.camera?.video?.height || frame.camera?.track?.height || frame.height);
+  const videoLongEdge = Math.max(videoWidth, videoHeight);
+  const videoShortEdge = Math.min(videoWidth, videoHeight);
+  const quarterPixels = Number(frame.guide.quarter.r || 0) * 2;
+  const facingMode = String(frame.camera?.track?.facingMode || frame.camera?.track?.preferredFacingMode || '').toLowerCase();
+  const scoreParts = [];
+  const warnings = [];
+  const blocking = [];
+
+  if (videoLongEdge >= MIN_VIDEO_WIDTH && videoShortEdge >= MIN_VIDEO_HEIGHT) {
+    scoreParts.push(30);
+  } else {
+    scoreParts.push(12);
+    warnings.push('Use rear camera or move closer for more pixels');
+  }
+
+  if (quarterPixels >= IDEAL_QUARTER_PIXELS) {
+    scoreParts.push(35);
+  } else if (quarterPixels >= MIN_QUARTER_PIXELS) {
+    scoreParts.push(24);
+    warnings.push('Quarter is usable but should be larger');
+  } else {
+    scoreParts.push(6);
+    blocking.push('Move closer so the quarter is larger');
+  }
+
+  if (!facingMode || facingMode.includes('environment') || facingMode.includes('back')) {
+    scoreParts.push(15);
+  } else {
+    scoreParts.push(6);
+    warnings.push('Rear camera is preferred');
+  }
+
+  if (frame.camera?.track?.supports?.focusMode || frame.camera?.track?.supports?.zoom || videoWidth >= 1600) {
+    scoreParts.push(10);
+  } else {
+    scoreParts.push(6);
+  }
+
+  if (Number(frame.width) >= 360 && Number(frame.height) >= 540) {
+    scoreParts.push(10);
+  } else {
+    scoreParts.push(4);
+    warnings.push('Screen capture area is small');
+  }
+
+  const score = clamp(Math.round(scoreParts.reduce((sum, value) => sum + value, 0)), 0, 100);
+  const status = blocking.length ? 'retake' : score >= 82 ? 'good' : score >= 62 ? 'check' : 'retake';
+
+  return {
+    status,
+    label: status === 'good' ? 'GOOD CAPTURE' : status === 'check' ? 'CHECK CAPTURE' : 'RETAKE PHOTO',
+    score,
+    blocking,
+    warnings,
+    metrics: {
+      videoWidth,
+      videoHeight,
+      quarterPixels: Math.round(quarterPixels),
+      facingMode: facingMode || 'unknown',
+    },
+  };
+};
+
+const createCustomerAccessCode = () => {
+  const bytes = new Uint8Array(4);
+  window.crypto?.getRandomValues?.(bytes);
+  const number = bytes.reduce((sum, value) => (sum * 256) + value, Date.now() % 1000);
+  return String(number).slice(-8).padStart(8, '0');
+};
+
+const normalizeCustomerAccessCode = (value) => String(value || '').trim().replace(/\s+/g, '');
 
 const getObjectCoverTransform = (video, rect) => {
   const videoWidth = video.videoWidth || rect.width;
@@ -46,6 +215,43 @@ const getObjectCoverTransform = (video, rect) => {
     scale,
     offsetX: (rect.width - renderedWidth) / 2,
     offsetY: (rect.height - renderedHeight) / 2,
+  };
+};
+
+const getHighResolutionCaptureSize = (video, rect) => {
+  const viewWidth = Math.max(1, Number(rect.width || video.videoWidth || 720));
+  const viewHeight = Math.max(1, Number(rect.height || video.videoHeight || 1280));
+  const aspect = viewWidth / viewHeight;
+  const naturalWidth = Math.max(1, Number(video.videoWidth || viewWidth));
+  const naturalHeight = Math.max(1, Number(video.videoHeight || viewHeight));
+  const naturalAspect = naturalWidth / naturalHeight;
+
+  let width;
+  let height;
+
+  if (aspect >= naturalAspect) {
+    width = Math.min(naturalWidth, MAX_CAPTURE_LONG_EDGE);
+    height = width / aspect;
+  } else {
+    height = Math.min(naturalHeight, MAX_CAPTURE_LONG_EDGE);
+    width = height * aspect;
+  }
+
+  if (Math.min(width, height) < MIN_CAPTURE_SHORT_EDGE) {
+    const upscale = MIN_CAPTURE_SHORT_EDGE / Math.min(width, height);
+    width *= upscale;
+    height *= upscale;
+  }
+
+  if (Math.max(width, height) > MAX_CAPTURE_LONG_EDGE) {
+    const downscale = MAX_CAPTURE_LONG_EDGE / Math.max(width, height);
+    width *= downscale;
+    height *= downscale;
+  }
+
+  return {
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
   };
 };
 
@@ -291,6 +497,26 @@ const requestCustomerNailsetSave = async (payload) => {
   return data;
 };
 
+const requestCustomerLogin = async ({ customerEmail, accessCode }) => {
+  const response = await fetch(CUSTOMER_LOGIN_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ customerEmail, accessCode }),
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('Customer login endpoint unavailable');
+  }
+
+  const data = await response.json();
+  if (!response.ok || !data.ok) {
+    throw new Error(data?.reason || data?.error || 'Customer login failed');
+  }
+
+  return data;
+};
+
 const getAssistMeasurement = (frame) => {
   if (!frame?.guide) return null;
 
@@ -298,7 +524,8 @@ const getAssistMeasurement = (frame) => {
   const quarterPixels = quarter.r * 2;
   const nailPixels = Math.hypot(nail.right.x - nail.left.x, nail.right.y - nail.left.y);
   const mm = calculateMM(nailPixels, quarterPixels);
-  const size = mmToNailSize(mm);
+  const fitContext = normalizeFitContext(frame.fitContext || DEFAULT_FIT_CONTEXT);
+  const size = mmToNailSize(mm, fitContext);
 
   if (!Number.isFinite(mm) || mm <= 0 || size === 'N/A') return null;
 
@@ -308,6 +535,9 @@ const getAssistMeasurement = (frame) => {
     method: 'assist',
     quarterPixels,
     nailPixels,
+    adjustedMM: getAdjustedNailWidthMM(mm, fitContext).toFixed(2),
+    fitContext,
+    captureQuality: getCaptureQuality(frame),
   };
 };
 
@@ -337,6 +567,9 @@ const cloneAssistFrame = (frame, ai = frame?.ai) => {
     width: frame.width,
     height: frame.height,
     zoom: frame.zoom || ASSIST_FRAME_ZOOM,
+    camera: cloneJson(frame.camera),
+    quality: cloneJson(frame.quality),
+    fitContext: normalizeFitContext(frame.fitContext || DEFAULT_FIT_CONTEXT),
     guide,
     ai: cloneJson(ai || { status: 'manual', label: 'MANUAL' }),
     aiGuide: cloneJson(frame.aiGuide),
@@ -351,6 +584,9 @@ const getStoredMeasurement = (result) => {
     method: result.method || 'assist',
     quarterPixels: result.quarterPixels,
     nailPixels: result.nailPixels,
+    adjustedMM: result.adjustedMM,
+    fitContext: result.fitContext ? normalizeFitContext(result.fitContext) : null,
+    captureQuality: cloneJson(result.captureQuality),
   };
 };
 
@@ -377,6 +613,46 @@ const storeCustomerEmail = (email) => {
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 
+const formatCustomerDate = (value) => {
+  if (!value) return 'Saved session';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Saved session';
+  return date.toLocaleString();
+};
+
+const getStoredCustomerAccessCode = () => {
+  try {
+    return window.localStorage?.getItem('nailmeasure_customer_access_code') || '';
+  } catch (error) {
+    return '';
+  }
+};
+
+const storeCustomerAccessCode = (code) => {
+  try {
+    window.localStorage?.setItem('nailmeasure_customer_access_code', code);
+  } catch (error) {
+    // Local storage is only for convenience.
+  }
+};
+
+const getStoredFitContext = () => {
+  try {
+    const parsed = JSON.parse(window.localStorage?.getItem('nailmeasure_fit_context') || '{}');
+    return normalizeFitContext({ ...DEFAULT_FIT_CONTEXT, ...parsed });
+  } catch (error) {
+    return normalizeFitContext(DEFAULT_FIT_CONTEXT);
+  }
+};
+
+const storeFitContext = (fitContext) => {
+  try {
+    window.localStorage?.setItem('nailmeasure_fit_context', JSON.stringify(normalizeFitContext(fitContext)));
+  } catch (error) {
+    // Local storage is only for convenience.
+  }
+};
+
 const buildTrainingLabelPayload = ({ frame, measurement, fingerName, shotNumber, sessionId }) => {
   const guide = cloneAssistGuide(frame?.guide);
   if (!frame || !guide || !measurement) return null;
@@ -392,6 +668,9 @@ const buildTrainingLabelPayload = ({ frame, measurement, fingerName, shotNumber,
       width: frame.width,
       height: frame.height,
       zoom: frame.zoom || ASSIST_FRAME_ZOOM,
+      camera: cloneJson(frame.camera),
+      quality: cloneJson(frame.quality || getCaptureQuality(frame)),
+      fitContext: normalizeFitContext(frame.fitContext || DEFAULT_FIT_CONTEXT),
     },
     guide,
     ai: {
@@ -404,15 +683,21 @@ const buildTrainingLabelPayload = ({ frame, measurement, fingerName, shotNumber,
       method: measurement.method || 'assist',
       quarterPixels: measurement.quarterPixels,
       nailPixels: measurement.nailPixels,
+      adjustedMM: Number(measurement.adjustedMM),
+      fitContext: normalizeFitContext(measurement.fitContext || frame.fitContext || DEFAULT_FIT_CONTEXT),
+      captureQuality: cloneJson(measurement.captureQuality || frame.quality || getCaptureQuality(frame)),
     },
     source: 'assist-correction',
     appVersion: APP_VERSION,
   };
 };
 
-const buildCustomerNailsetPayload = ({ customerEmail, sessionId, results, steps, status }) => {
+const buildCustomerNailsetPayload = ({ customerEmail, accessCode, fitContext, sessionId, results, steps, status }) => {
   const normalizedEmail = normalizeEmail(customerEmail);
   if (!EMAIL_PATTERN.test(normalizedEmail)) return null;
+
+  const normalizedAccessCode = normalizeCustomerAccessCode(accessCode);
+  const normalizedFitContext = normalizeFitContext(fitContext || DEFAULT_FIT_CONTEXT);
 
   const measurements = steps
     .map((fingerName, index) => {
@@ -429,6 +714,9 @@ const buildCustomerNailsetPayload = ({ customerEmail, sessionId, results, steps,
         method: result.method || 'assist',
         quarterPixels: result.quarterPixels,
         nailPixels: result.nailPixels,
+        adjustedMM: result.adjustedMM,
+        fitContext: normalizeFitContext(result.fitContext || normalizedFitContext),
+        captureQuality: cloneJson(result.captureQuality),
         guide: cloneAssistGuide(result.frame?.guide),
         image: result.frame?.image || null,
         frame: result.frame
@@ -436,6 +724,9 @@ const buildCustomerNailsetPayload = ({ customerEmail, sessionId, results, steps,
               width: result.frame.width,
               height: result.frame.height,
               zoom: result.frame.zoom || ASSIST_FRAME_ZOOM,
+              camera: cloneJson(result.frame.camera),
+              quality: cloneJson(result.frame.quality || result.captureQuality),
+              fitContext: normalizeFitContext(result.frame.fitContext || result.fitContext || normalizedFitContext),
             }
           : null,
         capturedAt: result.capturedAt || new Date().toISOString(),
@@ -448,6 +739,8 @@ const buildCustomerNailsetPayload = ({ customerEmail, sessionId, results, steps,
   return {
     sessionId,
     customerEmail: normalizedEmail,
+    accessCode: normalizedAccessCode,
+    fitContext: normalizedFitContext,
     status,
     measurements,
     source: 'customer-measurement-flow',
@@ -456,7 +749,8 @@ const buildCustomerNailsetPayload = ({ customerEmail, sessionId, results, steps,
 };
 
 function App() {
-  if (window.location.pathname.startsWith('/admin')) {
+  const hostname = window.location.hostname.toLowerCase();
+  if (window.location.pathname.startsWith('/admin') || hostname.startsWith('admin.')) {
     return <AdminPortal />;
   }
 
@@ -468,6 +762,11 @@ function App() {
     "Right Thumb", "Right Pointer", "Right Middle", "Right Ring", "Right Pinky"
   ]
   const [customerEmail, setCustomerEmail] = useState(getStoredCustomerEmail)
+  const [customerAccessCode, setCustomerAccessCode] = useState(getStoredCustomerAccessCode)
+  const [customerPortalStatus, setCustomerPortalStatus] = useState({ type: 'idle', text: '' })
+  const [customerSessions, setCustomerSessions] = useState([])
+  const [fitContext, setFitContext] = useState(getStoredFitContext)
+  const [cameraProfile, setCameraProfile] = useState(null)
   
   // Vision Health & Stability
   const [systemBooting, setSystemBooting] = useState(true)
@@ -497,6 +796,7 @@ function App() {
   const lastHandRef = useRef(null) // V27: Sync Capture Hand Ref
   const lastQuarterRef = useRef(0) // V27: Sync Capture Quarter Ref
   const videoDimsRef = useRef({ w: 0, h: 0 }) // V27: Sync Capture Dims Ref
+  const cameraProfileRef = useRef(null)
   const orientationRef = useRef({ pitch: 0, roll: 0 })
   const isLeveledRef = useRef(true)
   const isStableSignalRef = useRef(false)
@@ -512,6 +812,7 @@ function App() {
 
   useEffect(() => { shotNumberRef.current = shotNumber }, [shotNumber])
   useEffect(() => { isStableSignalRef.current = isStableSignal }, [isStableSignal])
+  useEffect(() => { storeFitContext(fitContext) }, [fitContext])
   useEffect(() => () => {
     if (trainingStatusTimerRef.current) clearTimeout(trainingStatusTimerRef.current);
     if (customerSaveTimerRef.current) clearTimeout(customerSaveTimerRef.current);
@@ -541,6 +842,57 @@ function App() {
     }
   }
 
+  const ensureCustomerAccessCode = () => {
+    const normalized = normalizeCustomerAccessCode(customerAccessCode);
+    const nextCode = CUSTOMER_ACCESS_CODE_PATTERN.test(normalized)
+      ? normalized
+      : createCustomerAccessCode();
+    setCustomerAccessCode(nextCode);
+    storeCustomerAccessCode(nextCode);
+    return nextCode;
+  }
+
+  const updateFitContext = (field, value) => {
+    setFitContext(prev => normalizeFitContext({ ...prev, [field]: value }));
+  }
+
+  const loadCustomerPortal = async () => {
+    const normalizedEmail = normalizeEmail(customerEmail);
+    const normalizedCode = normalizeCustomerAccessCode(customerAccessCode);
+
+    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+      setCustomerPortalStatus({ type: 'error', text: 'Enter a valid email address' });
+      return;
+    }
+
+    if (!CUSTOMER_ACCESS_CODE_PATTERN.test(normalizedCode)) {
+      setCustomerPortalStatus({ type: 'error', text: 'Enter your access code' });
+      return;
+    }
+
+    setCustomerPortalStatus({ type: 'loading', text: 'Checking saved nail sizes' });
+
+    try {
+      const data = await requestCustomerLogin({
+        customerEmail: normalizedEmail,
+        accessCode: normalizedCode,
+      });
+      setCustomerEmail(normalizedEmail);
+      storeCustomerEmail(normalizedEmail);
+      setCustomerAccessCode(normalizedCode);
+      storeCustomerAccessCode(normalizedCode);
+      setCustomerSessions(data.sessions || []);
+      setCurrentStep('customerReview');
+      setCustomerPortalStatus({
+        type: 'success',
+        text: `${data.sessions?.length || 0} saved session${data.sessions?.length === 1 ? '' : 's'} found`,
+      });
+    } catch (error) {
+      setCustomerSessions([]);
+      setCustomerPortalStatus({ type: 'error', text: error.message || 'Saved sizes unavailable' });
+    }
+  }
+
   // Launch Protocol
   const startWizard = () => {
     const normalizedEmail = normalizeEmail(customerEmail);
@@ -552,8 +904,12 @@ function App() {
        alert("Viewport too small/stalled. Please resize or refresh.");
        return; 
     }
+    const normalizedAccessCode = ensureCustomerAccessCode();
     setCustomerEmail(normalizedEmail)
     storeCustomerEmail(normalizedEmail)
+    setCustomerAccessCode(normalizedAccessCode)
+    storeCustomerAccessCode(normalizedAccessCode)
+    setFitContext(normalizeFitContext(fitContext))
     setShotNumber(1)
     setCurrentStep('wizard')
     setIsCameraReady(false)
@@ -573,6 +929,8 @@ function App() {
     lastHandRef.current = null
     lastQuarterRef.current = 0
     videoDimsRef.current = { w: 0, h: 0 }
+    cameraProfileRef.current = null
+    setCameraProfile(null)
     orientationRef.current = { pitch: 0, roll: 0 }
     isLeveledRef.current = true
     isStableSignalRef.current = false
@@ -640,6 +998,8 @@ function App() {
   const saveCustomerNailset = (nextResults, status = 'draft') => {
     const payload = buildCustomerNailsetPayload({
       customerEmail,
+      accessCode: customerAccessCode,
+      fitContext,
       sessionId: customerSessionIdRef.current,
       results: nextResults,
       steps,
@@ -695,6 +1055,20 @@ function App() {
        });
     };
 
+    const attachStream = (stream, preferredFacingMode) => {
+       const profile = getVideoTrackMetadata(stream, preferredFacingMode);
+       cameraProfileRef.current = profile;
+       setCameraProfile(profile);
+
+       if (!cancelled && videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+             videoRef.current.play().catch(() => setMessage('Tap to Allow Camera Playback'));
+             checkDimensions();
+          }
+       }
+    };
+
     const checkDimensions = () => {
        if (cancelled) return;
        if (videoRef.current?.videoWidth > 0) {
@@ -716,39 +1090,36 @@ function App() {
        try {
           setMessage('Opening camera...');
           const stream = await requestStream({
-             video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+             video: {
+                facingMode: { ideal: 'environment' },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
+                frameRate: { ideal: 30 },
+                advanced: [
+                  { focusMode: 'continuous' },
+                  { exposureMode: 'continuous' },
+                ],
+             }
           });
           if (!stream) return;
           if (cancelled) {
              stream.getTracks().forEach(track => track.stop());
              return;
           }
-          if (!cancelled && videoRef.current) {
-             videoRef.current.srcObject = stream;
-             videoRef.current.onloadedmetadata = () => {
-                videoRef.current.play().catch(() => setMessage('Tap to Allow Camera Playback'));
-                checkDimensions();
-             }
-          }
+          attachStream(stream, 'environment');
        } catch (err) {
           // Fallback to front camera if environment fails
           try {
              const fallbackStream = await requestStream({ video: true });
              if (!fallbackStream) return;
              if (cancelled) {
-                fallbackStream.getTracks().forEach(track => track.stop());
-                return;
-             }
-             if (!cancelled && videoRef.current) {
-                videoRef.current.srcObject = fallbackStream;
-                videoRef.current.onloadedmetadata = () => {
-                   videoRef.current.play().catch(() => setMessage('Tap to Allow Camera Playback'));
-                   checkDimensions();
-                }
-             }
-          } catch (e) {
-             setMessage('Camera Permission Required');
-          }
+                 fallbackStream.getTracks().forEach(track => track.stop());
+                 return;
+              }
+              attachStream(fallbackStream, 'user');
+           } catch (e) {
+              setMessage('Camera Permission Required');
+           }
        }
     };
     startCamera();
@@ -1073,7 +1444,7 @@ function App() {
             setMeasurement(null);
          } else {
             const fingerPx = calculateFingerWidthPixels(viewHand, fingerIndex, rect.width, rect.height);
-            const sizing = getFullSizing(fingerPx, quarter.diameter, viewHand, rect.width, rect.height);
+             const sizing = getFullSizing(fingerPx, quarter.diameter, viewHand, rect.width, rect.height, fitContext);
             const hasSizing = sizing.size !== 'N/A' && Number.parseFloat(sizing.mm) > 0;
 
             if (hasSizing) {
@@ -1099,7 +1470,7 @@ function App() {
 
     processFrame();
     return () => cancelAnimationFrame(frameIdRef.current);
-  }, [isVisionReady, currentStep]);
+  }, [isVisionReady, currentStep, fitContext]);
 
   const advanceSequence = (nextMeasurement) => {
     if (isAdvancingRef.current) return;
@@ -1178,8 +1549,9 @@ function App() {
     }
 
     const rect = video.getBoundingClientRect();
-    const width = Math.max(1, Math.round(rect.width || video.videoWidth));
-    const height = Math.max(1, Math.round(rect.height || video.videoHeight));
+    const captureSize = getHighResolutionCaptureSize(video, rect);
+    const width = captureSize.width;
+    const height = captureSize.height;
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) {
@@ -1200,23 +1572,32 @@ function App() {
 
     const image = canvas.toDataURL('image/jpeg', 0.92);
     const guide = getDefaultAssistGuide(width, height);
-    const requestId = assistRequestRef.current + 1;
-    assistRequestRef.current = requestId;
-
-    setAssistFrame({
+    const frameFitContext = normalizeFitContext(fitContext);
+    const camera = buildFrameCameraMetadata(video, cameraProfileRef.current);
+    const baseFrame = {
       image,
       width,
       height,
       zoom: ASSIST_FRAME_ZOOM,
+      camera,
+      fitContext: frameFitContext,
       guide,
       aiGuide: null,
       ai: { status: 'scanning', label: 'AI SCAN' },
+    };
+    const quality = getCaptureQuality(baseFrame);
+    const requestId = assistRequestRef.current + 1;
+    assistRequestRef.current = requestId;
+
+    setAssistFrame({
+      ...baseFrame,
+      quality,
     });
     setDragHandle(null);
     dragOffsetRef.current = { x: 0, y: 0 };
     setIsStableSignal(false);
     setMeasurement(null);
-    setMessage('Checking frame with AI guide');
+    setMessage(quality.status === 'retake' ? quality.blocking[0] || 'Retake photo closer' : 'Checking frame with AI guide');
 
     try {
       const aiResult = await requestAssistGuide({
@@ -1231,9 +1612,10 @@ function App() {
       if (aiResult?.guide && (aiResult.guide.quarter || aiResult.guide.nail)) {
         setAssistFrame(prev => {
           if (!prev) return prev;
-          return {
+          const nextGuide = mergeAssistGuide(prev.guide, aiResult.guide, prev.width, prev.height);
+          const nextFrame = {
             ...prev,
-            guide: mergeAssistGuide(prev.guide, aiResult.guide, prev.width, prev.height),
+            guide: nextGuide,
             aiGuide: cloneJson(aiResult.guide),
             ai: {
               status: 'suggested',
@@ -1242,6 +1624,10 @@ function App() {
               detections: aiResult.detections || null,
               predictionCount: aiResult.predictionCount || 0,
             },
+          };
+          return {
+            ...nextFrame,
+            quality: getCaptureQuality(nextFrame),
           };
         });
         setMessage('AI guide ready; adjust if needed');
@@ -1329,7 +1715,8 @@ function App() {
         };
       }
 
-      return { ...prev, guide };
+      const nextFrame = { ...prev, guide };
+      return { ...nextFrame, quality: getCaptureQuality(nextFrame) };
     });
   }
 
@@ -1351,11 +1738,15 @@ function App() {
   }
 
   const resetAssistGuide = () => {
-    setAssistFrame(prev => prev ? {
-      ...prev,
-      guide: getDefaultAssistGuide(prev.width, prev.height),
-      ai: { status: 'manual', label: 'MANUAL' },
-    } : prev);
+    setAssistFrame(prev => {
+      if (!prev) return prev;
+      const nextFrame = {
+        ...prev,
+        guide: getDefaultAssistGuide(prev.width, prev.height),
+        ai: { status: 'manual', label: 'MANUAL' },
+      };
+      return { ...nextFrame, quality: getCaptureQuality(nextFrame) };
+    });
     setDragHandle(null);
     dragOffsetRef.current = { x: 0, y: 0 };
   }
@@ -1367,6 +1758,12 @@ function App() {
       return;
     }
 
+    if (nextMeasurement.captureQuality?.blocking?.length) {
+      setMessage(nextMeasurement.captureQuality.blocking[0]);
+      setAssistFrame(prev => prev ? ({ ...prev, quality: nextMeasurement.captureQuality }) : prev);
+      return;
+    }
+
     setAssistFrame(null);
     setDragHandle(null);
     dragOffsetRef.current = { x: 0, y: 0 };
@@ -1375,6 +1772,7 @@ function App() {
 
   // UI VIEWS
   const assistMeasurement = getAssistMeasurement(assistFrame);
+  const assistQuality = assistFrame ? getCaptureQuality(assistFrame) : null;
   const assistGuide = assistFrame?.guide || null;
   const quarter = assistGuide?.quarter || null;
   const nail = assistGuide?.nail || null;
@@ -1399,8 +1797,13 @@ function App() {
      : customerSaveStatus.status === 'saving'
         ? 'brand-chip-active animate-pulse'
         : customerSaveStatus.status === 'error'
-           ? 'brand-status-error'
-           : 'brand-live-badge';
+            ? 'brand-status-error'
+            : 'brand-live-badge';
+  const customerPortalStatusClass = customerPortalStatus.type === 'success'
+     ? 'brand-status-success'
+     : customerPortalStatus.type === 'error'
+        ? 'brand-status-error'
+        : 'brand-status-neutral';
   const renderAssistHandle = (handle, x, y, color) => (
      <g key={handle} onPointerDown={(event) => startAssistDrag(handle, event)} style={{ cursor: 'grab' }}>
         <circle cx={x} cy={y} r="30" fill="transparent" stroke="transparent" strokeWidth="1" />
@@ -1464,6 +1867,18 @@ function App() {
        <div className="brand-wordmark-small text-5xl mb-1">Nails By Liz</div>
        <h2 className="text-2xl font-black brand-heading mb-2 uppercase">Sizing Report</h2>
        <p className="brand-eyebrow mb-8 text-[10px] font-black tracking-widest uppercase">Professional nail art services</p>
+       <div className="brand-panel w-full max-w-sm p-4 mb-6 text-left">
+          <div className="grid grid-cols-2 gap-3 text-[9px] font-black uppercase tracking-widest">
+             <div>
+                <div className="brand-eyebrow mb-1">Access Code</div>
+                <div className="brand-heading text-sm">{customerAccessCode || 'Saved locally'}</div>
+             </div>
+             <div>
+                <div className="brand-eyebrow mb-1">Fit Context</div>
+                <div className="brand-heading text-sm">{fitContext.nailBedCurve.replace('-', ' ')}</div>
+             </div>
+          </div>
+       </div>
        
        <div className="w-full max-w-sm flex flex-col gap-6 mb-10">
           {/* LEFT HAND */}
@@ -1523,16 +1938,76 @@ function App() {
     </div>
   )
 
-  if (currentStep === 'welcome') return (
-    <div className="brand-shell fixed inset-0 flex flex-col items-center justify-center p-8 sm:p-12 overflow-hidden">
+  if (currentStep === 'customerReview') return (
+    <div className="brand-shell fixed inset-0 flex flex-col items-center p-6 sm:p-10 text-center overflow-y-auto">
        <BrandDecor />
-       <div className="brand-icon-card relative z-10 w-24 h-24 flex items-center justify-center mb-8 shadow-inner">
+       <div className="brand-wordmark-small text-5xl mb-1 mt-4">Nails By Liz</div>
+       <h2 className="text-2xl font-black brand-heading mb-2 uppercase">Saved Nail Sizes</h2>
+       <p className="brand-eyebrow mb-6 text-[10px] font-black tracking-widest uppercase">{customerEmail}</p>
+
+       {customerPortalStatus.text && (
+          <div className={`w-full max-w-md mb-5 rounded-2xl border px-4 py-3 text-[10px] font-black tracking-widest uppercase ${customerPortalStatusClass}`}>
+             {customerPortalStatus.text}
+          </div>
+       )}
+
+       <div className="w-full max-w-md flex flex-col gap-5 mb-8">
+          {customerSessions.length ? customerSessions.map(session => (
+             <section key={session.session_id} className="brand-panel p-5 text-left">
+                <div className="flex items-start justify-between gap-3 mb-4 border-b brand-divider pb-3">
+                   <div>
+                      <p className="text-[9px] brand-eyebrow font-black tracking-widest uppercase">{session.status || 'draft'} set</p>
+                      <h3 className="text-sm font-black brand-heading">{formatCustomerDate(session.updated_at || session.created_at)}</h3>
+                   </div>
+                   <span className="brand-chip-active rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest">
+                      {session.measurements?.length || 0}/10
+                   </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                   {(session.measurements || []).map(measurement => (
+                      <div key={measurement.id || `${session.session_id}-${measurement.finger_name}`} className="brand-tile p-3">
+                         <div className="text-[8px] brand-eyebrow font-black uppercase tracking-widest truncate">{measurement.finger_name}</div>
+                         <div className="text-lg font-black brand-heading leading-none mt-1">#{measurement.nail_size}</div>
+                         <div className="text-[9px] brand-accent font-black">{measurement.measurement_mm}mm</div>
+                      </div>
+                   ))}
+                </div>
+             </section>
+          )) : (
+             <div className="brand-panel p-6 text-center text-[10px] brand-eyebrow font-black uppercase tracking-widest">
+                No saved sessions found
+             </div>
+          )}
+       </div>
+
+       <div className="flex flex-col gap-3 w-full max-w-md">
+          <button
+             onClick={startWizard}
+             disabled={systemBooting}
+             className="brand-primary w-full py-5 font-black rounded-2xl shadow-2xl transition-all active:scale-95 text-sm uppercase flex items-center justify-center gap-2"
+          >
+             <RefreshCcw className="w-4 h-4" /> REDO NAIL SIZING
+          </button>
+          <button
+             onClick={() => setCurrentStep('welcome')}
+             className="brand-secondary w-full py-4 font-black rounded-2xl transition-all active:scale-95 text-xs uppercase"
+          >
+             BACK
+          </button>
+       </div>
+    </div>
+  )
+
+  if (currentStep === 'welcome') return (
+    <div className="brand-shell fixed inset-0 flex flex-col items-center justify-start sm:justify-center p-6 sm:p-12 overflow-y-auto overflow-x-hidden">
+       <BrandDecor />
+       <div className="brand-icon-card relative z-10 w-20 h-20 sm:w-24 sm:h-24 flex items-center justify-center mb-6 sm:mb-8 shadow-inner">
           <Sparkles className="w-10 h-10 brand-accent" />
        </div>
        <h1 className="brand-logo mb-3">Nails By Liz</h1>
-       <p className="brand-eyebrow font-bold tracking-widest text-[10px] uppercase mb-10 opacity-80 text-center">Professional Nail Art Services</p>
+       <p className="brand-eyebrow font-bold tracking-widest text-[10px] uppercase mb-6 sm:mb-10 opacity-80 text-center">Professional Nail Art Services</p>
        
-       <div className="brand-panel w-full max-w-[300px] sm:max-w-sm p-5 sm:p-8 mb-8">
+       <div className="brand-panel hidden sm:block w-full max-w-[300px] sm:max-w-sm p-5 sm:p-8 mb-8">
           <div className="flex items-center gap-4 mb-4">
              <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: BRAND_GUIDE.coin }} />
              <span className="text-xs brand-heading font-bold uppercase tracking-widest">Measure all 10 nails</span>
@@ -1560,6 +2035,67 @@ function App() {
              />
           </div>
        </div>
+
+       <div className="w-full max-w-[300px] sm:max-w-sm mb-5">
+          <label className="block text-[10px] brand-eyebrow font-black tracking-widest uppercase mb-2">ACCESS CODE</label>
+          <div className="relative">
+             <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 brand-accent" />
+             <input
+                type="password"
+                value={customerAccessCode}
+                onChange={(event) => setCustomerAccessCode(normalizeCustomerAccessCode(event.target.value))}
+                placeholder="auto-created for new customers"
+                className="brand-input w-full h-14 border rounded-2xl pl-11 pr-4 text-sm font-bold outline-none"
+                autoComplete="current-password"
+             />
+          </div>
+       </div>
+
+       <div className="brand-panel w-full max-w-[300px] sm:max-w-sm p-4 mb-5">
+          <div className="grid grid-cols-1 gap-3">
+             <label className="block">
+                <span className="block text-[9px] brand-eyebrow font-black tracking-widest uppercase mb-2">Nail set / manufacturer</span>
+                <input
+                   value={fitContext.manufacturer}
+                   onChange={(event) => updateFitContext('manufacturer', event.target.value)}
+                   className="brand-input w-full h-11 border rounded-xl px-3 text-xs font-bold outline-none"
+                   placeholder="Nails By Liz default"
+                />
+             </label>
+             <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                   <span className="block text-[9px] brand-eyebrow font-black tracking-widest uppercase mb-2">Fit</span>
+                   <select
+                      value={fitContext.productProfile}
+                      onChange={(event) => updateFitContext('productProfile', event.target.value)}
+                      className="brand-input brand-select w-full h-11 border rounded-xl px-3 text-xs font-bold outline-none"
+                   >
+                      {NAIL_FIT_PROFILES.map(profile => (
+                         <option key={profile.key} value={profile.key}>{profile.label}</option>
+                      ))}
+                   </select>
+                </label>
+                <label className="block">
+                   <span className="block text-[9px] brand-eyebrow font-black tracking-widest uppercase mb-2">Nail bed</span>
+                   <select
+                      value={fitContext.nailBedCurve}
+                      onChange={(event) => updateFitContext('nailBedCurve', event.target.value)}
+                      className="brand-input brand-select w-full h-11 border rounded-xl px-3 text-xs font-bold outline-none"
+                   >
+                      {NAIL_BED_CURVES.map(curve => (
+                         <option key={curve.key} value={curve.key}>{curve.label}</option>
+                      ))}
+                   </select>
+                </label>
+             </div>
+          </div>
+       </div>
+
+       {customerPortalStatus.text && currentStep === 'welcome' && (
+          <div className={`w-full max-w-[300px] sm:max-w-sm mb-5 rounded-2xl border px-4 py-3 text-[10px] font-black tracking-widest uppercase ${customerPortalStatusClass}`}>
+             {customerPortalStatus.text}
+          </div>
+       )}
        
        <button 
           onClick={startWizard}
@@ -1570,10 +2106,11 @@ function App() {
        </button>
 
        <button
-          onClick={() => { window.location.href = '/admin'; }}
-          className="brand-ghost mt-5 text-[10px] font-black tracking-widest uppercase"
+          onClick={loadCustomerPortal}
+          disabled={systemBooting || customerPortalStatus.type === 'loading'}
+          className="brand-secondary mt-3 w-full max-w-[300px] sm:max-w-sm py-4 rounded-2xl font-black text-xs tracking-widest uppercase flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
        >
-          ADMIN
+          <RefreshCcw className="w-4 h-4" /> CHECK SAVED SIZES
        </button>
     </div>
   )
@@ -1593,11 +2130,21 @@ function App() {
                    <span className={`mt-2 inline-flex px-2 py-1 rounded-full border text-[8px] font-black tracking-widest ${assistAiClass}`}>
                       {assistAi.label}
                    </span>
+                   {assistQuality && (
+                      <span className={`ml-2 mt-2 inline-flex px-2 py-1 rounded-full border text-[8px] font-black tracking-widest ${
+                         assistQuality.status === 'good' ? 'brand-chip-active' : assistQuality.status === 'retake' ? 'brand-status-error' : 'brand-chip'
+                      }`}>
+                         {assistQuality.label} {assistQuality.score}
+                      </span>
+                   )}
                 </div>
                 <div className="text-right shrink-0">
                    <div className="text-[10px] brand-eyebrow font-black tracking-widest uppercase">SIZE</div>
                    <div className="brand-measure-readout text-3xl font-black leading-none">#{assistMeasurement?.size || '-'}</div>
                    <div className="text-[10px] brand-eyebrow font-black">{assistMeasurement?.mm || '0.00'}mm</div>
+                   {assistMeasurement?.adjustedMM && (
+                      <div className="text-[9px] brand-accent font-black">{assistMeasurement.adjustedMM}mm fit</div>
+                   )}
                 </div>
              </div>
 
@@ -1652,6 +2199,11 @@ function App() {
              </div>
 
              <div className="brand-assist-footer p-5 border-t flex items-center gap-3">
+                {assistQuality?.warnings?.length > 0 && (
+                   <div className="absolute left-5 right-5 -top-12 rounded-2xl border px-3 py-2 text-[9px] font-black uppercase tracking-widest brand-status-neutral">
+                      {assistQuality.blocking[0] || assistQuality.warnings[0]}
+                   </div>
+                )}
                 <button
                    aria-label="Reset assisted guides"
                    onClick={resetAssistGuide}
@@ -1746,6 +2298,11 @@ function App() {
              <h3 className="text-xl sm:text-2xl font-black brand-heading leading-none uppercase truncate">{steps[shotNumber-1]}</h3>
              {currentSavedMeasurement && (
                 <span className="text-[9px] brand-accent font-black tracking-widest uppercase">SAVED #{currentSavedMeasurement.size} / {currentSavedMeasurement.mm}mm</span>
+             )}
+             {cameraProfile && (
+                <span className="text-[8px] brand-eyebrow font-black tracking-widest uppercase">
+                   CAM {cameraProfile.width || videoDimsRef.current.w || '-'}x{cameraProfile.height || videoDimsRef.current.h || '-'} {cameraProfile.facingMode || cameraProfile.preferredFacingMode || ''}
+                </span>
              )}
              {allFingersMeasured && (
                 <button
