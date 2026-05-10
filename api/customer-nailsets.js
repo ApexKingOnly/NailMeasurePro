@@ -6,7 +6,7 @@ const DEFAULT_MEASUREMENTS_TABLE = 'customer_nail_measurements';
 const DEFAULT_IMAGES_BUCKET = 'customer-nail-images';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_BASE64_LENGTH = 7_000_000;
-const ACCESS_CODE_PATTERN = /^[a-zA-Z0-9-]{6,24}$/;
+const CUSTOMER_PASSWORD_MIN_LENGTH = 8;
 
 const parseRequestBody = (body) => {
   if (!body) return {};
@@ -16,15 +16,13 @@ const parseRequestBody = (body) => {
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 
-const normalizeAccessCode = (value) => String(value || '').trim().replace(/\s+/g, '');
-
-const hashCustomerAccessCode = (email, accessCode) => {
-  const normalizedCode = normalizeAccessCode(accessCode);
-  if (!ACCESS_CODE_PATTERN.test(normalizedCode)) return null;
-  const secret = process.env.CUSTOMER_ACCESS_SECRET || process.env.ADMIN_SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'nailmeasure-local';
+const hashCustomerPassword = (email, password) => {
+  const normalizedPassword = String(password || '');
+  if (normalizedPassword.length < CUSTOMER_PASSWORD_MIN_LENGTH) return null;
+  const secret = process.env.CUSTOMER_AUTH_SECRET || process.env.CUSTOMER_ACCESS_SECRET || process.env.ADMIN_SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'nailmeasure-local';
   return crypto
     .createHash('sha256')
-    .update(`${secret}:${normalizeEmail(email)}:${normalizedCode}`)
+    .update(`${secret}:${normalizeEmail(email)}:${normalizedPassword}`)
     .digest('hex');
 };
 
@@ -77,6 +75,7 @@ const normalizeFrame = (frame) => {
     camera: frame?.camera || null,
     quality: frame?.quality || null,
     fitContext: frame?.fitContext || null,
+    captureLayout: frame?.captureLayout || null,
   };
 };
 
@@ -101,7 +100,8 @@ const normalizeMeasurement = (measurement, index, context = {}) => {
   const shotNumber = toFiniteNumber(measurement?.shotNumber) || index + 1;
   const frame = normalizeFrame(measurement?.frame);
 
-  if (frame && context.accessHash) frame.customerAccessHash = context.accessHash;
+  if (frame && context.passwordHash) frame.customerPasswordHash = context.passwordHash;
+  if (frame && context.passwordHash) frame.customerAccessHash = context.passwordHash;
   if (frame && context.fitContext && !frame.fitContext) frame.fitContext = context.fitContext;
 
   if (!fingerName || !size || mm === null || mm <= 0) return null;
@@ -144,16 +144,16 @@ export default async function handler(req, res) {
     const customerEmailNormalized = normalizeEmail(customerEmail);
     const sessionId = String(body.sessionId || '').trim();
     const status = String(body.status || 'draft').trim().toLowerCase() === 'complete' ? 'complete' : 'draft';
-    const accessHash = hashCustomerAccessCode(customerEmailNormalized, body.accessCode);
+    const passwordHash = hashCustomerPassword(customerEmailNormalized, body.password || body.accessCode);
     const fitContext = body.fitContext || null;
     const measurements = Array.isArray(body.measurements)
-      ? body.measurements.map((measurement, index) => normalizeMeasurement(measurement, index, { accessHash, fitContext })).filter(Boolean)
+      ? body.measurements.map((measurement, index) => normalizeMeasurement(measurement, index, { passwordHash, fitContext })).filter(Boolean)
       : [];
 
-    if (!sessionId || !EMAIL_PATTERN.test(customerEmailNormalized) || !accessHash || !measurements.length) {
+    if (!sessionId || !EMAIL_PATTERN.test(customerEmailNormalized) || !passwordHash || !measurements.length) {
       res.status(400).json({
         ok: false,
-        error: 'Valid sessionId, customerEmail, accessCode, and at least one measurement are required',
+        error: 'Valid sessionId, customerEmail, password, and at least one measurement are required',
       });
       return;
     }

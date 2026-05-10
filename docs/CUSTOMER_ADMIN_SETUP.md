@@ -13,11 +13,12 @@ This is separate from AI detection and AI training data:
 ## App Flow
 
 1. Customer enters an email address before starting the sizing flow.
-2. Customer keeps or enters an access code. New customers get one created in the browser.
-3. Each accepted measurement is saved to a customer nail set session with camera/capture metadata and fit context.
-4. When all 10 fingers are measured, the same session is marked `complete`.
-5. Customer can return with email + access code to view saved sizes and redo measurements.
-6. Admin visits `/admin` or an admin subdomain, logs in, searches by customer email, and edits saved sizes if needed.
+2. Customer creates or enters an account password.
+3. Customer chooses the capture position: upright or sideways. The app sizes the quarter target and nail box differently for each orientation and stores the selected layout with the measurement.
+4. Each accepted measurement is saved to a customer nail set session with camera/capture metadata and fit context.
+5. When all 10 fingers are measured, the same session is marked `complete`.
+6. Customer can return with email + password to view saved sizes and redo measurements.
+7. Admin visits `/admin` or an admin subdomain, logs in, searches by customer email, and edits saved sizes if needed.
 
 If Supabase is not configured, the customer flow still works locally in the browser and the HUD shows `SAVE OFF`.
 
@@ -32,7 +33,8 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 CUSTOMER_NAIL_SESSIONS_TABLE=customer_nail_sessions
 CUSTOMER_NAIL_MEASUREMENTS_TABLE=customer_nail_measurements
 CUSTOMER_NAIL_IMAGES_BUCKET=customer-nail-images
-CUSTOMER_ACCESS_SECRET=long_random_secret_for_customer_access_codes
+CUSTOMER_AUTH_SECRET=long_random_secret_for_customer_password_hashes
+CUSTOMER_ACCESS_SECRET=legacy_customer_access_secret_optional
 
 ADMIN_ACCOUNTS_TABLE=admin_accounts
 ADMIN_NAME=admin
@@ -42,7 +44,7 @@ ADMIN_SESSION_SECRET=long_random_secret_here
 
 `ADMIN_SESSION_SECRET` should be a long random string. It is used to sign admin sessions.
 `ADMIN_NAME` and `ADMIN_PASSWORD` are a bootstrap fallback. In production, the preferred path is admin accounts in Supabase.
-`CUSTOMER_ACCESS_SECRET` hashes customer access codes before they are stored in measurement frame metadata. If omitted, the server falls back to `ADMIN_SESSION_SECRET` or the Supabase service role key.
+`CUSTOMER_AUTH_SECRET` hashes customer passwords before the credential marker is stored in measurement frame metadata. If omitted, the server falls back to the legacy `CUSTOMER_ACCESS_SECRET`, `ADMIN_SESSION_SECRET`, or the Supabase service role key.
 
 ## Supabase SQL
 

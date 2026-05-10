@@ -4,7 +4,7 @@ import crypto from 'crypto';
 const DEFAULT_SESSIONS_TABLE = 'customer_nail_sessions';
 const DEFAULT_MEASUREMENTS_TABLE = 'customer_nail_measurements';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ACCESS_CODE_PATTERN = /^[a-zA-Z0-9-]{6,24}$/;
+const CUSTOMER_PASSWORD_MIN_LENGTH = 8;
 
 const parseRequestBody = (body) => {
   if (!body) return {};
@@ -13,15 +13,13 @@ const parseRequestBody = (body) => {
 };
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
-const normalizeAccessCode = (value) => String(value || '').trim().replace(/\s+/g, '');
-
-const hashCustomerAccessCode = (email, accessCode) => {
-  const normalizedCode = normalizeAccessCode(accessCode);
-  if (!ACCESS_CODE_PATTERN.test(normalizedCode)) return null;
-  const secret = process.env.CUSTOMER_ACCESS_SECRET || process.env.ADMIN_SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'nailmeasure-local';
+const hashCustomerPassword = (email, password) => {
+  const normalizedPassword = String(password || '');
+  if (normalizedPassword.length < CUSTOMER_PASSWORD_MIN_LENGTH) return null;
+  const secret = process.env.CUSTOMER_AUTH_SECRET || process.env.CUSTOMER_ACCESS_SECRET || process.env.ADMIN_SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || 'nailmeasure-local';
   return crypto
     .createHash('sha256')
-    .update(`${secret}:${normalizeEmail(email)}:${normalizedCode}`)
+    .update(`${secret}:${normalizeEmail(email)}:${normalizedPassword}`)
     .digest('hex');
 };
 
@@ -36,6 +34,19 @@ const getSupabaseConfig = () => {
   }
 
   return { configured: true, url, serviceRoleKey, sessionsTable, measurementsTable };
+};
+
+const toCustomerMeasurement = (measurement) => {
+  const frame = measurement.frame && typeof measurement.frame === 'object'
+    ? { ...measurement.frame }
+    : measurement.frame;
+
+  if (frame && typeof frame === 'object') {
+    delete frame.customerPasswordHash;
+    delete frame.customerAccessHash;
+  }
+
+  return { ...measurement, frame };
 };
 
 export default async function handler(req, res) {
@@ -55,10 +66,10 @@ export default async function handler(req, res) {
     const body = parseRequestBody(req.body);
     const config = getSupabaseConfig();
     const customerEmail = normalizeEmail(body.customerEmail);
-    const accessHash = hashCustomerAccessCode(customerEmail, body.accessCode);
+    const passwordHash = hashCustomerPassword(customerEmail, body.password || body.accessCode);
 
-    if (!EMAIL_PATTERN.test(customerEmail) || !accessHash) {
-      res.status(400).json({ ok: false, configured: true, error: 'Valid customer email and access code are required' });
+    if (!EMAIL_PATTERN.test(customerEmail) || !passwordHash) {
+      res.status(400).json({ ok: false, configured: true, error: 'Valid customer email and password are required' });
       return;
     }
 
@@ -118,7 +129,10 @@ export default async function handler(req, res) {
 
     const allowedSessionIds = new Set(
       measurements
-        .filter(measurement => measurement.frame?.customerAccessHash === accessHash)
+        .filter(measurement => (
+          measurement.frame?.customerPasswordHash === passwordHash ||
+          measurement.frame?.customerAccessHash === passwordHash
+        ))
         .map(measurement => measurement.session_id)
     );
 
@@ -126,7 +140,9 @@ export default async function handler(req, res) {
       .filter(session => allowedSessionIds.has(session.session_id))
       .map(session => ({
         ...session,
-        measurements: measurements.filter(measurement => measurement.session_id === session.session_id),
+        measurements: measurements
+          .filter(measurement => measurement.session_id === session.session_id)
+          .map(toCustomerMeasurement),
       }));
 
     res.status(200).json({

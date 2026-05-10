@@ -20,19 +20,33 @@ import BrandDecor from './BrandArtwork.jsx'
 const getFingerIndexForShot = (shotNum) => [20, 16, 12, 8, 4, 4, 8, 12, 16, 20][shotNum - 1] || 8;
 
 const LEVEL_TOLERANCE_DEGREES = 8;
-const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.15 };
-const DEFAULT_NAIL_BOX = { x: 0.275, y: 0.43625, w: 0.45, h: 0.4375 };
+const CAPTURE_LAYOUTS = {
+  portrait: {
+    key: 'portrait',
+    label: 'Upright',
+    shortLabel: 'UPRIGHT',
+    quarter: { x: 0.5, y: 0.3, r: 0.19 },
+    nailBox: { x: 0.14, y: 0.42, w: 0.72, h: 0.5 },
+  },
+  landscape: {
+    key: 'landscape',
+    label: 'Sideways',
+    shortLabel: 'SIDEWAYS',
+    quarter: { x: 0.24, y: 0.5, r: 0.21 },
+    nailBox: { x: 0.42, y: 0.16, w: 0.5, h: 0.68 },
+  },
+};
 const AI_GUIDE_ENDPOINT = '/api/vision-detect';
 const TRAINING_LABEL_ENDPOINT = '/api/training-labels';
 const CUSTOMER_NAILSET_ENDPOINT = '/api/customer-nailsets';
 const CUSTOMER_LOGIN_ENDPOINT = '/api/customer-login';
 const NAIL_EDGE_HANDLE_DROP = 112;
 const ASSIST_FRAME_ZOOM = 1.25;
-const APP_VERSION = 'capture-quality-v1';
+const APP_VERSION = 'capture-layout-password-v1';
 const TRAINING_STATUS_IDLE = { status: 'idle', label: '' };
 const CUSTOMER_SAVE_STATUS_IDLE = { status: 'idle', label: '' };
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const CUSTOMER_ACCESS_CODE_PATTERN = /^[a-zA-Z0-9-]{6,24}$/;
+const CUSTOMER_PASSWORD_MIN_LENGTH = 8;
 const MIN_VIDEO_WIDTH = 1280;
 const MIN_VIDEO_HEIGHT = 720;
 const MIN_QUARTER_PIXELS = 170;
@@ -50,6 +64,55 @@ const BRAND_GUIDE = {
 };
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+const getCaptureLayout = (layoutKey) => CAPTURE_LAYOUTS[layoutKey] || CAPTURE_LAYOUTS.portrait;
+
+const getQuarterTarget = (width, height, layoutKey) => {
+  const layout = getCaptureLayout(layoutKey);
+  const basis = Math.min(width, height);
+  return {
+    x: layout.quarter.x * width,
+    y: layout.quarter.y * height,
+    r: layout.quarter.r * basis,
+  };
+};
+
+const getNailTargetBox = (width, height, layoutKey) => {
+  const layout = getCaptureLayout(layoutKey);
+  return {
+    x: layout.nailBox.x * width,
+    y: layout.nailBox.y * height,
+    w: layout.nailBox.w * width,
+    h: layout.nailBox.h * height,
+  };
+};
+
+const getGuideMetrics = (width, height, layoutKey) => {
+  const quarter = getQuarterTarget(width, height, layoutKey);
+  const nailBox = getNailTargetBox(width, height, layoutKey);
+  return {
+    layout: getCaptureLayout(layoutKey).shortLabel,
+    quarterDiameter: Math.round(quarter.r * 2),
+    nailBoxWidth: Math.round(nailBox.w),
+    nailBoxHeight: Math.round(nailBox.h),
+  };
+};
+
+const getOrientationPixelComparison = (viewportWidth, viewportHeight) => {
+  const shortSide = Math.max(1, Math.min(viewportWidth, viewportHeight));
+  const longSide = Math.max(1, Math.max(viewportWidth, viewportHeight));
+  const portrait = getGuideMetrics(shortSide, longSide, 'portrait');
+  const landscape = getGuideMetrics(longSide, shortSide, 'landscape');
+
+  return {
+    portrait,
+    landscape,
+    delta: {
+      quarterDiameter: landscape.quarterDiameter - portrait.quarterDiameter,
+      nailBoxWidth: landscape.nailBoxWidth - portrait.nailBoxWidth,
+    },
+  };
+};
 
 const sanitizeForJson = (value, depth = 0) => {
   if (depth > 4 || value === undefined || typeof value === 'function') return undefined;
@@ -193,14 +256,7 @@ const getCaptureQuality = (frame) => {
   };
 };
 
-const createCustomerAccessCode = () => {
-  const bytes = new Uint8Array(4);
-  window.crypto?.getRandomValues?.(bytes);
-  const number = bytes.reduce((sum, value) => (sum * 256) + value, Date.now() % 1000);
-  return String(number).slice(-8).padStart(8, '0');
-};
-
-const normalizeCustomerAccessCode = (value) => String(value || '').trim().replace(/\s+/g, '');
+const isCustomerPasswordValid = (password) => String(password || '').length >= CUSTOMER_PASSWORD_MIN_LENGTH;
 
 const getObjectCoverTransform = (video, rect) => {
   const videoWidth = video.videoWidth || rect.width;
@@ -293,15 +349,15 @@ const toViewLandmarks = (hand, transform, rect) => hand.map((landmark) => {
   };
 });
 
-const findQuarterInFrame = (video, rect, transform, quarterRing) => {
+const findQuarterInFrame = (video, rect, transform, quarterTarget) => {
   const cv = window.cv;
   if (!cv?.Mat || !video.videoWidth || !video.videoHeight || !rect.width || !rect.height) return null;
 
   const ringCenter = {
-    x: quarterRing.x * rect.width,
-    y: quarterRing.y * rect.height,
+    x: quarterTarget.x,
+    y: quarterTarget.y,
   };
-  const ringRadius = quarterRing.r * rect.width;
+  const ringRadius = quarterTarget.r;
   const searchRadius = ringRadius * 1.85;
   const topLeft = viewToVideoPoint({ x: ringCenter.x - searchRadius, y: ringCenter.y - searchRadius }, transform);
   const bottomRight = viewToVideoPoint({ x: ringCenter.x + searchRadius, y: ringCenter.y + searchRadius }, transform);
@@ -386,17 +442,17 @@ const findQuarterInFrame = (video, rect, transform, quarterRing) => {
   }
 };
 
-const getDefaultAssistGuide = (width, height) => ({
-  quarter: {
-    x: DEFAULT_QUARTER_RING.x * width,
-    y: DEFAULT_QUARTER_RING.y * height,
-    r: DEFAULT_QUARTER_RING.r * width,
-  },
-  nail: {
-    left: { x: (DEFAULT_NAIL_BOX.x + DEFAULT_NAIL_BOX.w * 0.34) * width, y: (DEFAULT_NAIL_BOX.y + DEFAULT_NAIL_BOX.h * 0.55) * height },
-    right: { x: (DEFAULT_NAIL_BOX.x + DEFAULT_NAIL_BOX.w * 0.66) * width, y: (DEFAULT_NAIL_BOX.y + DEFAULT_NAIL_BOX.h * 0.55) * height },
-  },
-});
+const getDefaultAssistGuide = (width, height, layoutKey = 'portrait') => {
+  const quarter = getQuarterTarget(width, height, layoutKey);
+  const nailBox = getNailTargetBox(width, height, layoutKey);
+  return {
+    quarter,
+    nail: {
+      left: { x: nailBox.x + nailBox.w * 0.36, y: nailBox.y + nailBox.h * 0.55 },
+      right: { x: nailBox.x + nailBox.w * 0.64, y: nailBox.y + nailBox.h * 0.55 },
+    },
+  };
+};
 
 const normalizePoint = (point, width, height) => {
   if (!point) return null;
@@ -442,11 +498,11 @@ const mergeAssistGuide = (baseGuide, aiGuide, width, height) => {
   return nextGuide;
 };
 
-const requestAssistGuide = async ({ image, width, height, fingerName }) => {
+const requestAssistGuide = async ({ image, width, height, fingerName, captureLayout }) => {
   const response = await fetch(AI_GUIDE_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image, width, height, fingerName }),
+    body: JSON.stringify({ image, width, height, fingerName, captureLayout }),
   });
 
   const contentType = response.headers.get('content-type') || '';
@@ -497,11 +553,11 @@ const requestCustomerNailsetSave = async (payload) => {
   return data;
 };
 
-const requestCustomerLogin = async ({ customerEmail, accessCode }) => {
+const requestCustomerLogin = async ({ customerEmail, password }) => {
   const response = await fetch(CUSTOMER_LOGIN_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ customerEmail, accessCode }),
+    body: JSON.stringify({ customerEmail, password }),
   });
 
   const contentType = response.headers.get('content-type') || '';
@@ -570,6 +626,7 @@ const cloneAssistFrame = (frame, ai = frame?.ai) => {
     camera: cloneJson(frame.camera),
     quality: cloneJson(frame.quality),
     fitContext: normalizeFitContext(frame.fitContext || DEFAULT_FIT_CONTEXT),
+    captureLayout: getCaptureLayout(frame.captureLayout).key,
     guide,
     ai: cloneJson(ai || { status: 'manual', label: 'MANUAL' }),
     aiGuide: cloneJson(frame.aiGuide),
@@ -620,17 +677,17 @@ const formatCustomerDate = (value) => {
   return date.toLocaleString();
 };
 
-const getStoredCustomerAccessCode = () => {
+const getStoredCaptureLayout = () => {
   try {
-    return window.localStorage?.getItem('nailmeasure_customer_access_code') || '';
+    return getCaptureLayout(window.localStorage?.getItem('nailmeasure_capture_layout')).key;
   } catch (error) {
-    return '';
+    return 'portrait';
   }
 };
 
-const storeCustomerAccessCode = (code) => {
+const storeCaptureLayout = (layoutKey) => {
   try {
-    window.localStorage?.setItem('nailmeasure_customer_access_code', code);
+    window.localStorage?.setItem('nailmeasure_capture_layout', getCaptureLayout(layoutKey).key);
   } catch (error) {
     // Local storage is only for convenience.
   }
@@ -671,6 +728,7 @@ const buildTrainingLabelPayload = ({ frame, measurement, fingerName, shotNumber,
       camera: cloneJson(frame.camera),
       quality: cloneJson(frame.quality || getCaptureQuality(frame)),
       fitContext: normalizeFitContext(frame.fitContext || DEFAULT_FIT_CONTEXT),
+      captureLayout: getCaptureLayout(frame.captureLayout).key,
     },
     guide,
     ai: {
@@ -692,11 +750,11 @@ const buildTrainingLabelPayload = ({ frame, measurement, fingerName, shotNumber,
   };
 };
 
-const buildCustomerNailsetPayload = ({ customerEmail, accessCode, fitContext, sessionId, results, steps, status }) => {
+const buildCustomerNailsetPayload = ({ customerEmail, password, fitContext, sessionId, results, steps, status }) => {
   const normalizedEmail = normalizeEmail(customerEmail);
   if (!EMAIL_PATTERN.test(normalizedEmail)) return null;
 
-  const normalizedAccessCode = normalizeCustomerAccessCode(accessCode);
+  if (!isCustomerPasswordValid(password)) return null;
   const normalizedFitContext = normalizeFitContext(fitContext || DEFAULT_FIT_CONTEXT);
 
   const measurements = steps
@@ -727,6 +785,7 @@ const buildCustomerNailsetPayload = ({ customerEmail, accessCode, fitContext, se
               camera: cloneJson(result.frame.camera),
               quality: cloneJson(result.frame.quality || result.captureQuality),
               fitContext: normalizeFitContext(result.frame.fitContext || result.fitContext || normalizedFitContext),
+              captureLayout: getCaptureLayout(result.frame.captureLayout).key,
             }
           : null,
         capturedAt: result.capturedAt || new Date().toISOString(),
@@ -739,7 +798,7 @@ const buildCustomerNailsetPayload = ({ customerEmail, accessCode, fitContext, se
   return {
     sessionId,
     customerEmail: normalizedEmail,
-    accessCode: normalizedAccessCode,
+    password,
     fitContext: normalizedFitContext,
     status,
     measurements,
@@ -762,10 +821,15 @@ function App() {
     "Right Thumb", "Right Pointer", "Right Middle", "Right Ring", "Right Pinky"
   ]
   const [customerEmail, setCustomerEmail] = useState(getStoredCustomerEmail)
-  const [customerAccessCode, setCustomerAccessCode] = useState(getStoredCustomerAccessCode)
+  const [customerPassword, setCustomerPassword] = useState('')
   const [customerPortalStatus, setCustomerPortalStatus] = useState({ type: 'idle', text: '' })
   const [customerSessions, setCustomerSessions] = useState([])
   const [fitContext, setFitContext] = useState(getStoredFitContext)
+  const [captureLayout, setCaptureLayout] = useState(getStoredCaptureLayout)
+  const [viewportSize, setViewportSize] = useState(() => ({
+    width: window.innerWidth || 390,
+    height: window.innerHeight || 844,
+  }))
   const [cameraProfile, setCameraProfile] = useState(null)
   
   // Vision Health & Stability
@@ -813,6 +877,22 @@ function App() {
   useEffect(() => { shotNumberRef.current = shotNumber }, [shotNumber])
   useEffect(() => { isStableSignalRef.current = isStableSignal }, [isStableSignal])
   useEffect(() => { storeFitContext(fitContext) }, [fitContext])
+  useEffect(() => { storeCaptureLayout(captureLayout) }, [captureLayout])
+  useEffect(() => {
+    const updateViewport = () => {
+      setViewportSize({
+        width: window.innerWidth || 390,
+        height: window.innerHeight || 844,
+      });
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    window.addEventListener('orientationchange', updateViewport);
+    return () => {
+      window.removeEventListener('resize', updateViewport);
+      window.removeEventListener('orientationchange', updateViewport);
+    };
+  }, [])
   useEffect(() => () => {
     if (trainingStatusTimerRef.current) clearTimeout(trainingStatusTimerRef.current);
     if (customerSaveTimerRef.current) clearTimeout(customerSaveTimerRef.current);
@@ -842,31 +922,26 @@ function App() {
     }
   }
 
-  const ensureCustomerAccessCode = () => {
-    const normalized = normalizeCustomerAccessCode(customerAccessCode);
-    const nextCode = CUSTOMER_ACCESS_CODE_PATTERN.test(normalized)
-      ? normalized
-      : createCustomerAccessCode();
-    setCustomerAccessCode(nextCode);
-    storeCustomerAccessCode(nextCode);
-    return nextCode;
-  }
-
   const updateFitContext = (field, value) => {
     setFitContext(prev => normalizeFitContext({ ...prev, [field]: value }));
   }
 
+  const updateCaptureLayout = (layoutKey) => {
+    const nextLayout = getCaptureLayout(layoutKey).key;
+    setCaptureLayout(nextLayout);
+    storeCaptureLayout(nextLayout);
+  }
+
   const loadCustomerPortal = async () => {
     const normalizedEmail = normalizeEmail(customerEmail);
-    const normalizedCode = normalizeCustomerAccessCode(customerAccessCode);
 
     if (!EMAIL_PATTERN.test(normalizedEmail)) {
       setCustomerPortalStatus({ type: 'error', text: 'Enter a valid email address' });
       return;
     }
 
-    if (!CUSTOMER_ACCESS_CODE_PATTERN.test(normalizedCode)) {
-      setCustomerPortalStatus({ type: 'error', text: 'Enter your access code' });
+    if (!isCustomerPasswordValid(customerPassword)) {
+      setCustomerPortalStatus({ type: 'error', text: 'Enter your account password' });
       return;
     }
 
@@ -875,12 +950,10 @@ function App() {
     try {
       const data = await requestCustomerLogin({
         customerEmail: normalizedEmail,
-        accessCode: normalizedCode,
+        password: customerPassword,
       });
       setCustomerEmail(normalizedEmail);
       storeCustomerEmail(normalizedEmail);
-      setCustomerAccessCode(normalizedCode);
-      storeCustomerAccessCode(normalizedCode);
       setCustomerSessions(data.sessions || []);
       setCurrentStep('customerReview');
       setCustomerPortalStatus({
@@ -904,12 +977,14 @@ function App() {
        alert("Viewport too small/stalled. Please resize or refresh.");
        return; 
     }
-    const normalizedAccessCode = ensureCustomerAccessCode();
+    if (!isCustomerPasswordValid(customerPassword)) {
+       alert(`Create an account password with at least ${CUSTOMER_PASSWORD_MIN_LENGTH} characters.`);
+       return;
+    }
     setCustomerEmail(normalizedEmail)
     storeCustomerEmail(normalizedEmail)
-    setCustomerAccessCode(normalizedAccessCode)
-    storeCustomerAccessCode(normalizedAccessCode)
     setFitContext(normalizeFitContext(fitContext))
+    updateCaptureLayout(captureLayout)
     setShotNumber(1)
     setCurrentStep('wizard')
     setIsCameraReady(false)
@@ -998,7 +1073,7 @@ function App() {
   const saveCustomerNailset = (nextResults, status = 'draft') => {
     const payload = buildCustomerNailsetPayload({
       customerEmail,
-      accessCode: customerAccessCode,
+      password: customerPassword,
       fitContext,
       sessionId: customerSessionIdRef.current,
       results: nextResults,
@@ -1306,13 +1381,14 @@ function App() {
          const transform = getObjectCoverTransform(video, rect);
          
          // V28: CLOSE SURGICAL STACK (Quarter Center-Top, Nail Center-Bottom) - CLOSE SPACING
-         const quarterRing = DEFAULT_QUARTER_RING; 
-         const nBox = DEFAULT_NAIL_BOX; 
+          const activeLayout = captureLayout;
+          const quarterTarget = getQuarterTarget(rect.width, rect.height, activeLayout);
+          const nBox = getNailTargetBox(rect.width, rect.height, activeLayout);
 
          const drawSurgicalHUD = () => {
-            const w = rect.width;
-            const h = rect.height;
-            const bx = nBox.x * w; const by = nBox.y * h; const bw = nBox.w * w; const bh = nBox.h * h;
+             const w = rect.width;
+             const h = rect.height;
+             const bx = nBox.x; const by = nBox.y; const bw = nBox.w; const bh = nBox.h;
             const cl = 30; // Corner Length
 
             ctx.save();
@@ -1333,7 +1409,7 @@ function App() {
             ctx.beginPath(); ctx.moveTo(bx + bw - cl, by + bh); ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx + bw, by + bh - cl); ctx.stroke();
 
             // Scaling Target (Quarter Crosshair)
-            const dx = quarterRing.x * w; const dy = quarterRing.y * h; const dr = quarterRing.r * w;
+             const dx = quarterTarget.x; const dy = quarterTarget.y; const dr = quarterTarget.r;
             ctx.setLineDash([8, 12]);
             ctx.beginPath(); ctx.arc(dx, dy, dr, 0, 2 * Math.PI); ctx.stroke();
             ctx.setLineDash([]);
@@ -1369,7 +1445,7 @@ function App() {
 
          let quarter = null;
          try {
-            quarter = findQuarterInFrame(video, rect, transform, quarterRing);
+            quarter = findQuarterInFrame(video, rect, transform, quarterTarget);
          } catch (cvErr) {
             console.warn("CV Frame Error:", cvErr);
          }
@@ -1380,7 +1456,7 @@ function App() {
          const activeTip = viewHand?.[fingerIndex]
             ? { x: viewHand[fingerIndex].x * rect.width, y: viewHand[fingerIndex].y * rect.height }
             : null;
-         const nailBox = zoneToRect(nBox, rect);
+          const nailBox = nBox;
          const fingerDetected = Boolean(activeTip && isPointInRect(activeTip, nailBox, 24));
          const quarterDetected = Boolean(quarter?.diameter);
          const levelDetected = isLeveledRef.current;
@@ -1470,7 +1546,7 @@ function App() {
 
     processFrame();
     return () => cancelAnimationFrame(frameIdRef.current);
-  }, [isVisionReady, currentStep, fitContext]);
+  }, [isVisionReady, currentStep, fitContext, captureLayout]);
 
   const advanceSequence = (nextMeasurement) => {
     if (isAdvancingRef.current) return;
@@ -1571,7 +1647,7 @@ function App() {
     );
 
     const image = canvas.toDataURL('image/jpeg', 0.92);
-    const guide = getDefaultAssistGuide(width, height);
+    const guide = getDefaultAssistGuide(width, height, captureLayout);
     const frameFitContext = normalizeFitContext(fitContext);
     const camera = buildFrameCameraMetadata(video, cameraProfileRef.current);
     const baseFrame = {
@@ -1581,6 +1657,7 @@ function App() {
       zoom: ASSIST_FRAME_ZOOM,
       camera,
       fitContext: frameFitContext,
+      captureLayout,
       guide,
       aiGuide: null,
       ai: { status: 'scanning', label: 'AI SCAN' },
@@ -1605,6 +1682,7 @@ function App() {
         width,
         height,
         fingerName: steps[shotNumberRef.current - 1],
+        captureLayout,
       });
 
       if (assistRequestRef.current !== requestId) return;
@@ -1742,7 +1820,7 @@ function App() {
       if (!prev) return prev;
       const nextFrame = {
         ...prev,
-        guide: getDefaultAssistGuide(prev.width, prev.height),
+        guide: getDefaultAssistGuide(prev.width, prev.height, prev.captureLayout || captureLayout),
         ai: { status: 'manual', label: 'MANUAL' },
       };
       return { ...nextFrame, quality: getCaptureQuality(nextFrame) };
@@ -1829,6 +1907,8 @@ function App() {
   const currentFingerName = steps[shotNumber - 1];
   const currentSavedMeasurement = getStoredMeasurement(results[currentFingerName]);
   const allFingersMeasured = steps.every(finger => results[finger]?.mm && results[finger]?.size);
+  const orientationComparison = getOrientationPixelComparison(viewportSize.width, viewportSize.height);
+  const activeLayoutMetrics = getGuideMetrics(viewportSize.width, viewportSize.height, captureLayout);
   const topNavigationControls = (
      <div className="absolute top-4 left-4 z-[95] flex items-center gap-2">
         <button
@@ -1870,8 +1950,8 @@ function App() {
        <div className="brand-panel w-full max-w-sm p-4 mb-6 text-left">
           <div className="grid grid-cols-2 gap-3 text-[9px] font-black uppercase tracking-widest">
              <div>
-                <div className="brand-eyebrow mb-1">Access Code</div>
-                <div className="brand-heading text-sm">{customerAccessCode || 'Saved locally'}</div>
+                <div className="brand-eyebrow mb-1">Account</div>
+                <div className="brand-heading text-sm">{customerEmail}</div>
              </div>
              <div>
                 <div className="brand-eyebrow mb-1">Fit Context</div>
@@ -2037,14 +2117,14 @@ function App() {
        </div>
 
        <div className="w-full max-w-[300px] sm:max-w-sm mb-5">
-          <label className="block text-[10px] brand-eyebrow font-black tracking-widest uppercase mb-2">ACCESS CODE</label>
+          <label className="block text-[10px] brand-eyebrow font-black tracking-widest uppercase mb-2">ACCOUNT PASSWORD</label>
           <div className="relative">
              <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 brand-accent" />
              <input
                 type="password"
-                value={customerAccessCode}
-                onChange={(event) => setCustomerAccessCode(normalizeCustomerAccessCode(event.target.value))}
-                placeholder="auto-created for new customers"
+                value={customerPassword}
+                onChange={(event) => setCustomerPassword(event.target.value)}
+                placeholder="create or enter password"
                 className="brand-input w-full h-14 border rounded-2xl pl-11 pr-4 text-sm font-bold outline-none"
                 autoComplete="current-password"
              />
@@ -2091,6 +2171,42 @@ function App() {
           </div>
        </div>
 
+       <div className="brand-panel w-full max-w-[300px] sm:max-w-sm p-4 mb-5">
+          <div className="flex items-center justify-between gap-2 mb-3">
+             <span className="text-[9px] brand-eyebrow font-black tracking-widest uppercase">Camera position</span>
+             <span className="text-[9px] brand-accent font-black tracking-widest uppercase">{activeLayoutMetrics.quarterDiameter}px qtr</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+             {Object.values(CAPTURE_LAYOUTS).map(layout => (
+                <button
+                   key={layout.key}
+                   type="button"
+                   onClick={() => updateCaptureLayout(layout.key)}
+                   className={`h-11 rounded-xl border text-[10px] font-black uppercase tracking-widest active:scale-95 ${
+                      captureLayout === layout.key ? 'brand-primary' : 'brand-secondary'
+                   }`}
+                >
+                   {layout.label}
+                </button>
+             ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[8px] font-black uppercase tracking-widest">
+             <div className="brand-tile p-2">
+                <div className="brand-eyebrow">Upright</div>
+                <div className="brand-heading">{orientationComparison.portrait.quarterDiameter}px qtr</div>
+                <div className="brand-accent">{orientationComparison.portrait.nailBoxWidth}px nail box</div>
+             </div>
+             <div className="brand-tile p-2">
+                <div className="brand-eyebrow">Sideways</div>
+                <div className="brand-heading">{orientationComparison.landscape.quarterDiameter}px qtr</div>
+                <div className="brand-accent">{orientationComparison.landscape.nailBoxWidth}px nail box</div>
+             </div>
+          </div>
+          <p className="mt-3 text-[8px] brand-eyebrow font-black uppercase tracking-widest leading-relaxed">
+             Sideways changes by {orientationComparison.delta.quarterDiameter >= 0 ? '+' : ''}{orientationComparison.delta.quarterDiameter}px quarter and {orientationComparison.delta.nailBoxWidth >= 0 ? '+' : ''}{orientationComparison.delta.nailBoxWidth}px nail width on this screen.
+          </p>
+       </div>
+
        {customerPortalStatus.text && currentStep === 'welcome' && (
           <div className={`w-full max-w-[300px] sm:max-w-sm mb-5 rounded-2xl border px-4 py-3 text-[10px] font-black tracking-widest uppercase ${customerPortalStatusClass}`}>
              {customerPortalStatus.text}
@@ -2102,7 +2218,7 @@ function App() {
           disabled={systemBooting}
           className={`brand-primary w-full max-w-[300px] sm:max-w-sm py-6 rounded-3xl font-black text-xl shadow-2xl transition-all active:scale-95 ${systemBooting ? 'grayscale' : ''}`}
        >
-          {systemBooting ? 'GETTING CAMERA READY...' : 'START NAIL SIZING'}
+          {systemBooting ? 'GETTING CAMERA READY...' : 'CREATE ACCOUNT & START'}
        </button>
 
        <button
@@ -2304,6 +2420,9 @@ function App() {
                    CAM {cameraProfile.width || videoDimsRef.current.w || '-'}x{cameraProfile.height || videoDimsRef.current.h || '-'} {cameraProfile.facingMode || cameraProfile.preferredFacingMode || ''}
                 </span>
              )}
+             <span className="text-[8px] brand-accent font-black tracking-widest uppercase">
+                {getCaptureLayout(captureLayout).shortLabel} GUIDE / QTR {activeLayoutMetrics.quarterDiameter}px
+             </span>
              {allFingersMeasured && (
                 <button
                    onClick={() => setCurrentStep('finish')}

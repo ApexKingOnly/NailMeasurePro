@@ -107,6 +107,7 @@ const normalizeFrame = (frame) => {
     camera: frame?.camera || null,
     quality: frame?.quality || null,
     fitContext: frame?.fitContext || null,
+    captureLayout: frame?.captureLayout || null,
   };
 };
 

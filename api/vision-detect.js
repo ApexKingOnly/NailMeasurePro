@@ -3,8 +3,16 @@ const DEFAULT_CONFIDENCE = process.env.ROBOFLOW_CONFIDENCE || '35';
 const DEFAULT_OVERLAP = process.env.ROBOFLOW_OVERLAP || '30';
 const MAX_BASE64_LENGTH = 7_000_000;
 
-const DEFAULT_QUARTER_RING = { x: 0.5, y: 0.35, r: 0.15 };
-const DEFAULT_NAIL_BOX = { x: 0.275, y: 0.43625, w: 0.45, h: 0.4375 };
+const CAPTURE_LAYOUTS = {
+  portrait: {
+    quarter: { x: 0.5, y: 0.3, r: 0.19 },
+    nailBox: { x: 0.14, y: 0.42, w: 0.72, h: 0.5 },
+  },
+  landscape: {
+    quarter: { x: 0.24, y: 0.5, r: 0.21 },
+    nailBox: { x: 0.42, y: 0.16, w: 0.5, h: 0.68 },
+  },
+};
 
 const parseModelIds = (value) => (
   String(value || '')
@@ -14,6 +22,27 @@ const parseModelIds = (value) => (
 );
 
 const unique = (items) => [...new Set(items)];
+const getCaptureLayout = (layoutKey) => CAPTURE_LAYOUTS[layoutKey] || CAPTURE_LAYOUTS.portrait;
+
+const getQuarterTarget = (targetSize, layoutKey) => {
+  const layout = getCaptureLayout(layoutKey);
+  const basis = Math.min(targetSize.width, targetSize.height);
+  return {
+    x: layout.quarter.x * targetSize.width,
+    y: layout.quarter.y * targetSize.height,
+    r: layout.quarter.r * basis,
+  };
+};
+
+const getNailTargetBox = (targetSize, layoutKey) => {
+  const layout = getCaptureLayout(layoutKey);
+  return {
+    x: layout.nailBox.x * targetSize.width,
+    y: layout.nailBox.y * targetSize.height,
+    w: layout.nailBox.w * targetSize.width,
+    h: layout.nailBox.h * targetSize.height,
+  };
+};
 
 const parseRequestBody = (body) => {
   if (!body) return {};
@@ -167,12 +196,9 @@ const centerOf = (box) => ({
   y: (box.yMin + box.yMax) / 2,
 });
 
-const selectQuarter = (predictions, targetSize) => {
-  const expected = {
-    x: DEFAULT_QUARTER_RING.x * targetSize.width,
-    y: DEFAULT_QUARTER_RING.y * targetSize.height,
-  };
-  const expectedRadius = DEFAULT_QUARTER_RING.r * targetSize.width;
+const selectQuarter = (predictions, targetSize, captureLayout) => {
+  const expected = getQuarterTarget(targetSize, captureLayout);
+  const expectedRadius = expected.r;
 
   return predictions
     .filter((item) => item.type !== 'nail')
@@ -188,12 +214,13 @@ const selectQuarter = (predictions, targetSize) => {
     .sort((a, b) => b.score - a.score)[0] || null;
 };
 
-const selectNail = (predictions, targetSize) => {
+const selectNail = (predictions, targetSize, captureLayout) => {
+  const targetBox = getNailTargetBox(targetSize, captureLayout);
   const targetCenter = {
-    x: (DEFAULT_NAIL_BOX.x + DEFAULT_NAIL_BOX.w / 2) * targetSize.width,
-    y: (DEFAULT_NAIL_BOX.y + DEFAULT_NAIL_BOX.h / 2) * targetSize.height,
+    x: targetBox.x + targetBox.w / 2,
+    y: targetBox.y + targetBox.h / 2,
   };
-  const targetScale = Math.max(DEFAULT_NAIL_BOX.w * targetSize.width, DEFAULT_NAIL_BOX.h * targetSize.height, 1);
+  const targetScale = Math.max(targetBox.w, targetBox.h, 1);
 
   return predictions
     .filter((item) => item.type !== 'quarter')
@@ -254,6 +281,7 @@ export default async function handler(req, res) {
       width: Number(body.width || 0),
       height: Number(body.height || 0),
     };
+    const captureLayout = CAPTURE_LAYOUTS[body.captureLayout] ? body.captureLayout : 'portrait';
 
     if (!imageBase64 || imageBase64.length > MAX_BASE64_LENGTH || !targetSize.width || !targetSize.height) {
       res.status(400).json({ ok: false, error: 'Valid base64 image, width, and height are required' });
@@ -290,8 +318,8 @@ export default async function handler(req, res) {
       targetSize,
     })));
     const predictions = results.flatMap((result) => result.predictions);
-    const quarter = selectQuarter(predictions, targetSize);
-    const nail = selectNail(predictions, targetSize);
+    const quarter = selectQuarter(predictions, targetSize, captureLayout);
+    const nail = selectNail(predictions, targetSize, captureLayout);
     const guide = buildGuide({ nail, quarter });
 
     res.status(200).json({
