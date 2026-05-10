@@ -750,7 +750,7 @@ const buildCustomerNailsetPayload = ({ customerEmail, accessCode, fitContext, se
 
 function App() {
   const hostname = window.location.hostname.toLowerCase();
-  if (window.location.pathname.startsWith('/admin') || hostname.startsWith('admin.')) {
+  if (window.location.pathname.startsWith('/admin') || hostname.startsWith('admin.') || hostname.startsWith('admin-')) {
     return <AdminPortal />;
   }
 
