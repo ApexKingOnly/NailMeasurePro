@@ -2087,6 +2087,42 @@ function App() {
        <h1 className="welcome-logo brand-logo mb-3">Nails By Liz</h1>
        <p className="welcome-tagline brand-eyebrow font-bold tracking-widest text-[10px] uppercase mb-6 sm:mb-10 opacity-80 text-center">Professional Nail Art Services</p>
        
+       <div className="brand-panel w-full max-w-[300px] sm:max-w-sm p-4 mb-5">
+          <div className="flex items-center justify-between gap-2 mb-3">
+             <span className="text-[9px] brand-eyebrow font-black tracking-widest uppercase">Camera position</span>
+             <span className="text-[9px] brand-accent font-black tracking-widest uppercase">{activeLayoutMetrics.quarterDiameter}px qtr</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+             {Object.values(CAPTURE_LAYOUTS).map(layout => (
+                <button
+                   key={layout.key}
+                   type="button"
+                   onClick={() => updateCaptureLayout(layout.key)}
+                   className={`h-11 rounded-xl border text-[10px] font-black uppercase tracking-widest active:scale-95 ${
+                      captureLayout === layout.key ? 'brand-primary' : 'brand-secondary'
+                   }`}
+                >
+                   {layout.label}
+                </button>
+             ))}
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[8px] font-black uppercase tracking-widest">
+             <div className="brand-tile p-2">
+                <div className="brand-eyebrow">Upright</div>
+                <div className="brand-heading">{orientationComparison.portrait.quarterDiameter}px qtr</div>
+                <div className="brand-accent">{orientationComparison.portrait.nailBoxWidth}px nail box</div>
+             </div>
+             <div className="brand-tile p-2">
+                <div className="brand-eyebrow">Sideways</div>
+                <div className="brand-heading">{orientationComparison.landscape.quarterDiameter}px qtr</div>
+                <div className="brand-accent">{orientationComparison.landscape.nailBoxWidth}px nail box</div>
+             </div>
+          </div>
+          <p className="mt-3 text-[8px] brand-eyebrow font-black uppercase tracking-widest leading-relaxed">
+             Sideways changes by {orientationComparison.delta.quarterDiameter >= 0 ? '+' : ''}{orientationComparison.delta.quarterDiameter}px quarter and {orientationComparison.delta.nailBoxWidth >= 0 ? '+' : ''}{orientationComparison.delta.nailBoxWidth}px nail width on this screen.
+          </p>
+       </div>
+
        <div className="welcome-measure-list brand-panel hidden sm:block w-full max-w-[300px] sm:max-w-sm p-5 sm:p-8 mb-8">
           <div className="flex items-center gap-4 mb-4">
              <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: BRAND_GUIDE.coin }} />
@@ -2169,42 +2205,6 @@ function App() {
                 </label>
              </div>
           </div>
-       </div>
-
-       <div className="brand-panel w-full max-w-[300px] sm:max-w-sm p-4 mb-5">
-          <div className="flex items-center justify-between gap-2 mb-3">
-             <span className="text-[9px] brand-eyebrow font-black tracking-widest uppercase">Camera position</span>
-             <span className="text-[9px] brand-accent font-black tracking-widest uppercase">{activeLayoutMetrics.quarterDiameter}px qtr</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 mb-3">
-             {Object.values(CAPTURE_LAYOUTS).map(layout => (
-                <button
-                   key={layout.key}
-                   type="button"
-                   onClick={() => updateCaptureLayout(layout.key)}
-                   className={`h-11 rounded-xl border text-[10px] font-black uppercase tracking-widest active:scale-95 ${
-                      captureLayout === layout.key ? 'brand-primary' : 'brand-secondary'
-                   }`}
-                >
-                   {layout.label}
-                </button>
-             ))}
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-[8px] font-black uppercase tracking-widest">
-             <div className="brand-tile p-2">
-                <div className="brand-eyebrow">Upright</div>
-                <div className="brand-heading">{orientationComparison.portrait.quarterDiameter}px qtr</div>
-                <div className="brand-accent">{orientationComparison.portrait.nailBoxWidth}px nail box</div>
-             </div>
-             <div className="brand-tile p-2">
-                <div className="brand-eyebrow">Sideways</div>
-                <div className="brand-heading">{orientationComparison.landscape.quarterDiameter}px qtr</div>
-                <div className="brand-accent">{orientationComparison.landscape.nailBoxWidth}px nail box</div>
-             </div>
-          </div>
-          <p className="mt-3 text-[8px] brand-eyebrow font-black uppercase tracking-widest leading-relaxed">
-             Sideways changes by {orientationComparison.delta.quarterDiameter >= 0 ? '+' : ''}{orientationComparison.delta.quarterDiameter}px quarter and {orientationComparison.delta.nailBoxWidth >= 0 ? '+' : ''}{orientationComparison.delta.nailBoxWidth}px nail width on this screen.
-          </p>
        </div>
 
        {customerPortalStatus.text && currentStep === 'welcome' && (
