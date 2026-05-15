@@ -7,6 +7,7 @@ const DEFAULT_IMAGES_BUCKET = 'customer-nail-images';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_BASE64_LENGTH = 7_000_000;
 const CUSTOMER_PASSWORD_MIN_LENGTH = 8;
+const DEFAULT_PROFILE_NAME = 'My nails';
 
 const parseRequestBody = (body) => {
   if (!body) return {};
@@ -15,6 +16,15 @@ const parseRequestBody = (body) => {
 };
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+const normalizeProfileName = (profileName) => (
+  String(profileName || DEFAULT_PROFILE_NAME).trim().replace(/\s+/g, ' ').slice(0, 80) || DEFAULT_PROFILE_NAME
+);
+const isMissingProfileNameColumnError = (error) => {
+  const message = String(error?.message || '').toLowerCase();
+  return error?.code === 'PGRST204' ||
+    error?.code === '42703' ||
+    (message.includes('profile_name') && (message.includes('schema cache') || message.includes('column')));
+};
 
 const hashCustomerPassword = (email, password) => {
   const normalizedPassword = String(password || '');
@@ -103,6 +113,7 @@ const normalizeMeasurement = (measurement, index, context = {}) => {
   if (frame && context.passwordHash) frame.customerPasswordHash = context.passwordHash;
   if (frame && context.passwordHash) frame.customerAccessHash = context.passwordHash;
   if (frame && context.fitContext && !frame.fitContext) frame.fitContext = context.fitContext;
+  if (frame && context.profileName) frame.profileName = context.profileName;
 
   if (!fingerName || !size || mm === null || mm <= 0) return null;
 
@@ -146,8 +157,9 @@ export default async function handler(req, res) {
     const status = String(body.status || 'draft').trim().toLowerCase() === 'complete' ? 'complete' : 'draft';
     const passwordHash = hashCustomerPassword(customerEmailNormalized, body.password || body.accessCode);
     const fitContext = body.fitContext || null;
+    const profileName = normalizeProfileName(body.profileName);
     const measurements = Array.isArray(body.measurements)
-      ? body.measurements.map((measurement, index) => normalizeMeasurement(measurement, index, { passwordHash, fitContext })).filter(Boolean)
+      ? body.measurements.map((measurement, index) => normalizeMeasurement(measurement, index, { passwordHash, fitContext, profileName })).filter(Boolean)
       : [];
 
     if (!sessionId || !EMAIL_PATTERN.test(customerEmailNormalized) || !passwordHash || !measurements.length) {
@@ -173,19 +185,32 @@ export default async function handler(req, res) {
     });
     const now = new Date().toISOString();
 
-    const sessionUpsert = await supabase
+    const sessionRow = {
+      session_id: sessionId,
+      customer_email: customerEmail,
+      customer_email_normalized: customerEmailNormalized,
+      status,
+      measurement_count: measurements.length,
+      submitted_at: status === 'complete' ? now : null,
+      updated_at: now,
+    };
+
+    let sessionUpsert = await supabase
       .from(config.sessionsTable)
       .upsert({
-        session_id: sessionId,
-        customer_email: customerEmail,
-        customer_email_normalized: customerEmailNormalized,
-        status,
-        measurement_count: measurements.length,
-        submitted_at: status === 'complete' ? now : null,
-        updated_at: now,
+        ...sessionRow,
+        profile_name: profileName,
       }, { onConflict: 'session_id' })
       .select('id, session_id')
       .single();
+
+    if (sessionUpsert.error && isMissingProfileNameColumnError(sessionUpsert.error)) {
+      sessionUpsert = await supabase
+        .from(config.sessionsTable)
+        .upsert(sessionRow, { onConflict: 'session_id' })
+        .select('id, session_id')
+        .single();
+    }
 
     if (sessionUpsert.error) {
       throw new Error(`Customer session save failed: ${sessionUpsert.error.message}`);
@@ -234,6 +259,7 @@ export default async function handler(req, res) {
       ok: true,
       configured: true,
       sessionId,
+      profileName,
       savedMeasurements: measurements.length,
       status,
     });

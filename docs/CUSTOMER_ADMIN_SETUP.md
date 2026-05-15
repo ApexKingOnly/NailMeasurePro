@@ -15,9 +15,9 @@ This is separate from AI detection and AI training data:
 1. Customer enters an email address before starting the sizing flow.
 2. Customer creates or enters an account password.
 3. Customer uses the upright capture guide. The app stores camera metadata, guide geometry, and the corrected portrait layout with the measurement.
-4. Each accepted measurement is saved to a customer nail set session with camera/capture metadata and fit context.
+4. Each accepted measurement is saved to a named customer nail profile with camera/capture metadata and fit context.
 5. When all 10 fingers are measured, the same session is marked `complete`.
-6. Customer can return with email + password to view saved sizes and redo measurements.
+6. Customer can return with email + password to view saved measurement profiles, switch between profiles, add profiles for family or clients, and redo measurements.
 7. Admin visits `/admin` or an admin subdomain, logs in, searches by customer email, and edits saved sizes if needed.
 
 If Supabase is not configured, the customer flow still works locally in the browser and the HUD shows `SAVE OFF`.
@@ -60,10 +60,22 @@ create table if not exists public.customer_nail_sessions (
   session_id text not null unique,
   customer_email text not null,
   customer_email_normalized text not null,
+  profile_name text not null default 'My nails',
   status text not null default 'draft',
   measurement_count integer not null default 0,
   submitted_at timestamptz
 );
+
+alter table public.customer_nail_sessions
+  add column if not exists profile_name text;
+
+update public.customer_nail_sessions
+  set profile_name = 'My nails'
+  where profile_name is null or btrim(profile_name) = '';
+
+alter table public.customer_nail_sessions
+  alter column profile_name set default 'My nails',
+  alter column profile_name set not null;
 
 create index if not exists customer_nail_sessions_email_idx
   on public.customer_nail_sessions (customer_email_normalized);

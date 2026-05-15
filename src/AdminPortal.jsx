@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronRight, KeyRound, LogOut, Power, Save, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { ChevronRight, Eye, EyeOff, KeyRound, LogOut, Power, Save, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { calculateMM, getNailSizeRecommendation } from './utils/sizing.js';
 import BrandDecor from './BrandArtwork.jsx';
 
@@ -7,6 +7,7 @@ const ADMIN_TOKEN_KEY = 'nailmeasure_admin_token';
 const ADMIN_NAME_KEY = 'nailmeasure_admin_name';
 const LEGACY_ADMIN_EMAIL_KEY = 'nailmeasure_admin_email';
 const DEFAULT_ADMIN_NAME = 'admin';
+const DEFAULT_PROFILE_NAME = 'My nails';
 const ADMIN_GUIDE_COLORS = {
   coin: '#c9a56a',
   coinRadius: '#c9b4dc',
@@ -49,6 +50,27 @@ const formatSizeDisplay = (size) => {
   const value = String(size || '').trim();
   if (!value) return 'size -';
   return value.includes('-') ? `between ${value}` : `size ${value}`;
+};
+
+const normalizeProfileName = (profileName) => (
+  String(profileName || DEFAULT_PROFILE_NAME).trim().replace(/\s+/g, ' ').slice(0, 80) || DEFAULT_PROFILE_NAME
+);
+
+const getSessionProfileName = (session) => {
+  const fromSession = session?.profile_name || session?.profileName;
+  if (fromSession) return normalizeProfileName(fromSession);
+
+  const measurementWithProfile = (session?.measurements || []).find(measurement => (
+    measurement?.frame?.profileName ||
+    measurement?.frame?.profile_name ||
+    measurement?.frame?.customerProfileName
+  ));
+
+  return normalizeProfileName(
+    measurementWithProfile?.frame?.profileName ||
+    measurementWithProfile?.frame?.profile_name ||
+    measurementWithProfile?.frame?.customerProfileName
+  );
 };
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -97,6 +119,9 @@ function AdminPortal() {
   const [adminName, setAdminName] = useState(() => getStoredValue(ADMIN_NAME_KEY));
   const [loginName, setLoginName] = useState(() => getStoredValue(ADMIN_NAME_KEY) || DEFAULT_ADMIN_NAME);
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewAccountPassword, setShowNewAccountPassword] = useState(false);
+  const [visibleResetPasswords, setVisibleResetPasswords] = useState({});
   const [searchEmail, setSearchEmail] = useState('');
   const [sessions, setSessions] = useState([]);
   const [drafts, setDrafts] = useState({});
@@ -118,6 +143,7 @@ function AdminPortal() {
     setDrafts({});
     setAccounts([]);
     setAccountPasswordDrafts({});
+    setVisibleResetPasswords({});
     setStatus({ type: 'idle', text: '' });
   };
 
@@ -581,13 +607,23 @@ function AdminPortal() {
           />
 
           <label className="block text-[10px] brand-eyebrow font-black tracking-widest uppercase mb-2">Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="brand-input w-full h-14 border px-4 text-sm font-bold outline-none mb-5"
-            autoComplete="current-password"
-          />
+          <div className="relative mb-5">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="brand-input w-full h-14 border px-4 pr-12 text-sm font-bold outline-none"
+              autoComplete="current-password"
+            />
+            <button
+              type="button"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              onClick={() => setShowPassword(prev => !prev)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 brand-icon-button flex items-center justify-center rounded-xl active:scale-95"
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
 
           {status.text && (
             <div className={`mb-5 rounded-2xl border px-4 py-3 text-[10px] font-black tracking-widest uppercase ${statusClass}`}>
@@ -645,14 +681,24 @@ function AdminPortal() {
               className="brand-input h-12 border rounded-2xl px-4 text-sm font-bold outline-none"
               autoComplete="off"
             />
-            <input
-              type="password"
-              value={newAccountPassword}
-              onChange={(event) => setNewAccountPassword(event.target.value)}
-              placeholder="temporary password"
-              className="brand-input h-12 border rounded-2xl px-4 text-sm font-bold outline-none"
-              autoComplete="new-password"
-            />
+            <div className="relative">
+              <input
+                type={showNewAccountPassword ? 'text' : 'password'}
+                value={newAccountPassword}
+                onChange={(event) => setNewAccountPassword(event.target.value)}
+                placeholder="temporary password"
+                className="brand-input h-12 w-full border rounded-2xl px-4 pr-12 text-sm font-bold outline-none"
+                autoComplete="new-password"
+              />
+              <button
+                type="button"
+                aria-label={showNewAccountPassword ? 'Hide password' : 'Show password'}
+                onClick={() => setShowNewAccountPassword(prev => !prev)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 brand-icon-button flex items-center justify-center rounded-xl active:scale-95"
+              >
+                {showNewAccountPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
             <button
               disabled={loading}
               className="brand-primary h-12 px-5 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95"
@@ -689,17 +735,27 @@ function AdminPortal() {
                     <td className="px-4 py-3 text-xs brand-eyebrow font-bold">{account.createdBy || 'System'}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
-                        <input
-                          type="password"
-                          value={accountPasswordDrafts[account.id] || ''}
-                          onChange={(event) => setAccountPasswordDrafts(prev => ({
-                            ...prev,
-                            [account.id]: event.target.value,
-                          }))}
-                          placeholder="new password"
-                          className="brand-input h-10 w-44 border rounded-xl px-3 text-xs font-bold outline-none"
-                          autoComplete="new-password"
-                        />
+                        <div className="relative w-44">
+                          <input
+                            type={visibleResetPasswords[account.id] ? 'text' : 'password'}
+                            value={accountPasswordDrafts[account.id] || ''}
+                            onChange={(event) => setAccountPasswordDrafts(prev => ({
+                              ...prev,
+                              [account.id]: event.target.value,
+                            }))}
+                            placeholder="new password"
+                            className="brand-input h-10 w-full border rounded-xl px-3 pr-10 text-xs font-bold outline-none"
+                            autoComplete="new-password"
+                          />
+                          <button
+                            type="button"
+                            aria-label={visibleResetPasswords[account.id] ? 'Hide password' : 'Show password'}
+                            onClick={() => setVisibleResetPasswords(prev => ({ ...prev, [account.id]: !prev[account.id] }))}
+                            className="absolute right-1 top-1/2 -translate-y-1/2 w-8 h-8 brand-icon-button flex items-center justify-center rounded-lg active:scale-95"
+                          >
+                            {visibleResetPasswords[account.id] ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
                         <button
                           type="button"
                           onClick={() => resetAdminPassword(account)}
@@ -754,8 +810,9 @@ function AdminPortal() {
             <section key={session.session_id} className="brand-admin-panel overflow-hidden">
               <div className="p-5 border-b brand-divider flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <p className="text-[10px] brand-eyebrow font-black tracking-widest uppercase">{session.status || 'draft'} session</p>
-                  <h2 className="text-lg font-black brand-heading">{session.customer_email}</h2>
+                  <p className="text-[10px] brand-eyebrow font-black tracking-widest uppercase">{session.status || 'draft'} profile</p>
+                  <h2 className="text-lg font-black brand-heading">{getSessionProfileName(session)}</h2>
+                  <p className="text-[10px] brand-eyebrow font-black tracking-widest uppercase mt-1">{session.customer_email}</p>
                 </div>
                 <div className="text-left sm:text-right text-[10px] brand-eyebrow font-black uppercase tracking-widest">
                   <div>{formatDate(session.updated_at || session.created_at)}</div>

@@ -5,6 +5,7 @@ const DEFAULT_SESSIONS_TABLE = 'customer_nail_sessions';
 const DEFAULT_MEASUREMENTS_TABLE = 'customer_nail_measurements';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CUSTOMER_PASSWORD_MIN_LENGTH = 8;
+const DEFAULT_PROFILE_NAME = 'My nails';
 
 const parseRequestBody = (body) => {
   if (!body) return {};
@@ -13,6 +14,21 @@ const parseRequestBody = (body) => {
 };
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+const normalizeProfileName = (profileName) => (
+  String(profileName || DEFAULT_PROFILE_NAME).trim().replace(/\s+/g, ' ').slice(0, 80) || DEFAULT_PROFILE_NAME
+);
+const getMeasurementProfileName = (sessionMeasurements = []) => {
+  for (const measurement of sessionMeasurements) {
+    const frame = measurement?.frame && typeof measurement.frame === 'object' ? measurement.frame : null;
+    const profileName = frame?.profileName || frame?.profile_name || frame?.customerProfileName;
+    if (profileName) return profileName;
+  }
+  return DEFAULT_PROFILE_NAME;
+};
+const withProfileName = (session, sessionMeasurements = []) => ({
+  ...session,
+  profile_name: normalizeProfileName(session.profile_name || session.profileName || getMeasurementProfileName(sessionMeasurements)),
+});
 const hashCustomerPassword = (email, password) => {
   const normalizedPassword = String(password || '');
   if (normalizedPassword.length < CUSTOMER_PASSWORD_MIN_LENGTH) return null;
@@ -138,12 +154,13 @@ export default async function handler(req, res) {
 
     const allowedSessions = sessions
       .filter(session => allowedSessionIds.has(session.session_id))
-      .map(session => ({
-        ...session,
-        measurements: measurements
-          .filter(measurement => measurement.session_id === session.session_id)
-          .map(toCustomerMeasurement),
-      }));
+      .map(session => {
+        const sessionMeasurements = measurements.filter(measurement => measurement.session_id === session.session_id);
+        return {
+          ...withProfileName(session, sessionMeasurements),
+          measurements: sessionMeasurements.map(toCustomerMeasurement),
+        };
+      });
 
     res.status(200).json({
       ok: true,

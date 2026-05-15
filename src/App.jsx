@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Camera, ShieldAlert, Scan, CheckCircle2, ChevronLeft, ChevronRight, KeyRound, Mail, RefreshCcw, Sparkles } from 'lucide-react'
+import { Camera, ShieldAlert, Scan, CheckCircle2, ChevronLeft, ChevronRight, Eye, EyeOff, KeyRound, Mail, RefreshCcw, Sparkles, UserPlus } from 'lucide-react'
 import {
   DEFAULT_FIT_CONTEXT,
   NAIL_BED_CURVES,
@@ -39,6 +39,7 @@ const TRAINING_STATUS_IDLE = { status: 'idle', label: '' };
 const CUSTOMER_SAVE_STATUS_IDLE = { status: 'idle', label: '' };
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CUSTOMER_PASSWORD_MIN_LENGTH = 8;
+const DEFAULT_PROFILE_NAME = 'My nails';
 const MIN_VIDEO_WIDTH = 1280;
 const MIN_VIDEO_HEIGHT = 720;
 const MIN_QUARTER_PIXELS = 170;
@@ -668,6 +669,9 @@ const storeCustomerEmail = (email) => {
 };
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+const normalizeProfileName = (profileName) => (
+  String(profileName || DEFAULT_PROFILE_NAME).trim().replace(/\s+/g, ' ').slice(0, 80) || DEFAULT_PROFILE_NAME
+);
 
 const formatCustomerDate = (value) => {
   if (!value) return 'Saved session';
@@ -681,6 +685,23 @@ const formatSizeDisplay = (size, { compact = false } = {}) => {
   if (!value) return compact ? '-' : 'Size -';
   if (value.includes('-')) return compact ? value : `Between ${value}`;
   return compact ? `#${value}` : `Size ${value}`;
+};
+
+const getCustomerProfileName = (session) => {
+  const fromSession = session?.profile_name || session?.profileName;
+  if (fromSession) return normalizeProfileName(fromSession);
+
+  const measurementWithProfile = (session?.measurements || []).find(measurement => (
+    measurement?.frame?.profileName ||
+    measurement?.frame?.profile_name ||
+    measurement?.frame?.customerProfileName
+  ));
+
+  return normalizeProfileName(
+    measurementWithProfile?.frame?.profileName ||
+    measurementWithProfile?.frame?.profile_name ||
+    measurementWithProfile?.frame?.customerProfileName
+  );
 };
 
 const getStoredFitContext = () => {
@@ -745,7 +766,7 @@ const buildTrainingLabelPayload = ({ frame, measurement, fingerName, shotNumber,
   };
 };
 
-const buildCustomerNailsetPayload = ({ customerEmail, password, fitContext, sessionId, results, steps, status }) => {
+const buildCustomerNailsetPayload = ({ customerEmail, password, profileName, fitContext, sessionId, results, steps, status }) => {
   const normalizedEmail = normalizeEmail(customerEmail);
   if (!EMAIL_PATTERN.test(normalizedEmail)) return null;
 
@@ -799,6 +820,7 @@ const buildCustomerNailsetPayload = ({ customerEmail, password, fitContext, sess
     sessionId,
     customerEmail: normalizedEmail,
     password,
+    profileName: normalizeProfileName(profileName),
     fitContext: normalizedFitContext,
     status,
     measurements,
@@ -822,6 +844,10 @@ function App() {
   ]
   const [customerEmail, setCustomerEmail] = useState(getStoredCustomerEmail)
   const [customerPassword, setCustomerPassword] = useState('')
+  const [showCustomerPassword, setShowCustomerPassword] = useState(false)
+  const [customerProfileName, setCustomerProfileName] = useState(DEFAULT_PROFILE_NAME)
+  const [newProfileName, setNewProfileName] = useState('')
+  const [selectedProfileSessionId, setSelectedProfileSessionId] = useState('')
   const [customerPortalStatus, setCustomerPortalStatus] = useState({ type: 'idle', text: '' })
   const [customerSessions, setCustomerSessions] = useState([])
   const [fitContext, setFitContext] = useState(getStoredFitContext)
@@ -947,11 +973,15 @@ function App() {
       });
       setCustomerEmail(normalizedEmail);
       storeCustomerEmail(normalizedEmail);
-      setCustomerSessions(data.sessions || []);
+      const nextSessions = data.sessions || [];
+      setCustomerSessions(nextSessions);
+      setSelectedProfileSessionId(nextSessions[0]?.session_id || '');
+      setCustomerProfileName(getCustomerProfileName(nextSessions[0]));
+      setNewProfileName('');
       setCurrentStep('customerReview');
       setCustomerPortalStatus({
         type: 'success',
-        text: `${data.sessions?.length || 0} saved session${data.sessions?.length === 1 ? '' : 's'} found`,
+        text: `${nextSessions.length} measurement profile${nextSessions.length === 1 ? '' : 's'} found`,
       });
     } catch (error) {
       setCustomerSessions([]);
@@ -960,8 +990,10 @@ function App() {
   }
 
   // Launch Protocol
-  const startWizard = () => {
+  const startWizard = (options = {}) => {
+    const wizardOptions = options && typeof options === 'object' && !options.preventDefault ? options : {};
     const normalizedEmail = normalizeEmail(customerEmail);
+    const profileName = normalizeProfileName(wizardOptions.profileName || customerProfileName);
     if (!EMAIL_PATTERN.test(normalizedEmail)) {
        alert("Enter a valid email address to start.");
        return;
@@ -974,8 +1006,13 @@ function App() {
        alert(`Create an account password with at least ${CUSTOMER_PASSWORD_MIN_LENGTH} characters.`);
        return;
     }
+    if (!profileName) {
+       alert("Enter a profile name.");
+       return;
+    }
     setCustomerEmail(normalizedEmail)
     storeCustomerEmail(normalizedEmail)
+    setCustomerProfileName(profileName)
     setFitContext(normalizeFitContext(fitContext))
     setShotNumber(1)
     setCurrentStep('wizard')
@@ -989,7 +1026,7 @@ function App() {
     showTrainingStatus(TRAINING_STATUS_IDLE, 0)
     showCustomerSaveStatus(CUSTOMER_SAVE_STATUS_IDLE, 0)
     sessionIdRef.current = createSessionId()
-    customerSessionIdRef.current = createSessionId()
+    customerSessionIdRef.current = wizardOptions.sessionId || createSessionId()
     isAdvancingRef.current = false
     setResults({})
     setMessage('Opening camera...')
@@ -1066,6 +1103,7 @@ function App() {
     const payload = buildCustomerNailsetPayload({
       customerEmail,
       password: customerPassword,
+      profileName: customerProfileName,
       fitContext,
       sessionId: customerSessionIdRef.current,
       results: nextResults,
@@ -1900,6 +1938,11 @@ function App() {
   const currentFingerName = steps[shotNumber - 1];
   const currentSavedMeasurement = getStoredMeasurement(results[currentFingerName]);
   const allFingersMeasured = steps.every(finger => results[finger]?.mm && results[finger]?.size);
+  const selectedCustomerSession = (
+     customerSessions.find(session => session.session_id === selectedProfileSessionId) ||
+     customerSessions[0] ||
+     null
+  );
   const activeLayoutMetrics = getGuideMetrics(viewportSize.width, viewportSize.height, captureLayout);
   const topNavigationControls = (
      <div className="live-nav-controls absolute top-4 left-4 z-[95] flex items-center gap-2">
@@ -2015,7 +2058,7 @@ function App() {
     <div className="brand-shell fixed inset-0 flex flex-col items-center p-6 sm:p-10 text-center overflow-y-auto">
        <BrandDecor />
        <div className="brand-wordmark-small text-5xl mb-1 mt-4">Nails By Liz</div>
-       <h2 className="text-2xl font-black brand-heading mb-2 uppercase">Saved Nail Sizes</h2>
+       <h2 className="text-2xl font-black brand-heading mb-2 uppercase">Measurements</h2>
        <p className="brand-eyebrow mb-6 text-[10px] font-black tracking-widest uppercase">{customerEmail}</p>
 
        {customerPortalStatus.text && (
@@ -2024,21 +2067,51 @@ function App() {
           </div>
        )}
 
+       <div className="w-full max-w-md brand-panel p-4 mb-5 text-left">
+          <div className="text-[10px] brand-accent font-black tracking-widest uppercase mb-3">Saved Profiles</div>
+          {customerSessions.length ? (
+             <div className="flex gap-2 overflow-x-auto pb-1">
+                {customerSessions.map(session => {
+                   const isSelected = selectedCustomerSession?.session_id === session.session_id;
+                   return (
+                      <button
+                         key={session.session_id}
+                         type="button"
+                         onClick={() => {
+                            setSelectedProfileSessionId(session.session_id);
+                            setCustomerProfileName(getCustomerProfileName(session));
+                         }}
+                         className={`shrink-0 rounded-2xl border px-4 py-3 text-left active:scale-95 ${isSelected ? 'brand-primary' : 'brand-secondary'}`}
+                      >
+                         <div className="text-[10px] font-black uppercase tracking-widest">{getCustomerProfileName(session)}</div>
+                         <div className="text-[8px] font-black uppercase tracking-widest opacity-75">{session.measurements?.length || 0}/10 saved</div>
+                      </button>
+                   );
+                })}
+             </div>
+          ) : (
+             <div className="brand-tile p-4 text-center text-[10px] brand-eyebrow font-black uppercase tracking-widest">
+                No saved profiles found
+             </div>
+          )}
+       </div>
+
        <div className="w-full max-w-md flex flex-col gap-5 mb-8">
-          {customerSessions.length ? customerSessions.map(session => (
-             <section key={session.session_id} className="brand-panel p-5 text-left">
+          {selectedCustomerSession ? (
+             <section key={selectedCustomerSession.session_id} className="brand-panel p-5 text-left">
                 <div className="flex items-start justify-between gap-3 mb-4 border-b brand-divider pb-3">
                    <div>
-                      <p className="text-[9px] brand-eyebrow font-black tracking-widest uppercase">{session.status || 'draft'} set</p>
-                      <h3 className="text-sm font-black brand-heading">{formatCustomerDate(session.updated_at || session.created_at)}</h3>
+                      <p className="text-[9px] brand-eyebrow font-black tracking-widest uppercase">{selectedCustomerSession.status || 'draft'} profile</p>
+                      <h3 className="text-base font-black brand-heading">{getCustomerProfileName(selectedCustomerSession)}</h3>
+                      <p className="text-[9px] brand-eyebrow font-black tracking-widest uppercase mt-1">{formatCustomerDate(selectedCustomerSession.updated_at || selectedCustomerSession.created_at)}</p>
                    </div>
                    <span className="brand-chip-active rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-widest">
-                      {session.measurements?.length || 0}/10
+                      {selectedCustomerSession.measurements?.length || 0}/10
                    </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                   {(session.measurements || []).map(measurement => (
-                      <div key={measurement.id || `${session.session_id}-${measurement.finger_name}`} className="brand-tile p-3">
+                   {(selectedCustomerSession.measurements || []).map(measurement => (
+                      <div key={measurement.id || `${selectedCustomerSession.session_id}-${measurement.finger_name}`} className="brand-tile p-3">
                          <div className="text-[8px] brand-eyebrow font-black uppercase tracking-widest truncate">{measurement.finger_name}</div>
                          <div className="text-lg font-black brand-heading leading-none mt-1">{formatSizeDisplay(measurement.nail_size, { compact: true })}</div>
                          <div className="text-[9px] brand-accent font-black">{measurement.measurement_mm}mm</div>
@@ -2046,21 +2119,53 @@ function App() {
                    ))}
                 </div>
              </section>
-          )) : (
+          ) : (
              <div className="brand-panel p-6 text-center text-[10px] brand-eyebrow font-black uppercase tracking-widest">
-                No saved sessions found
+                No saved measurements found
              </div>
           )}
        </div>
 
        <div className="flex flex-col gap-3 w-full max-w-md">
           <button
-             onClick={startWizard}
-             disabled={systemBooting}
-             className="brand-primary w-full py-5 font-black rounded-2xl shadow-2xl transition-all active:scale-95 text-sm uppercase flex items-center justify-center gap-2"
+             onClick={() => selectedCustomerSession && startWizard({
+                sessionId: selectedCustomerSession.session_id,
+                profileName: getCustomerProfileName(selectedCustomerSession),
+             })}
+             disabled={systemBooting || !selectedCustomerSession}
+             className="brand-primary w-full py-5 font-black rounded-2xl shadow-2xl transition-all active:scale-95 text-sm uppercase flex items-center justify-center gap-2 disabled:opacity-50"
           >
-             <RefreshCcw className="w-4 h-4" /> REDO NAIL SIZING
+             <RefreshCcw className="w-4 h-4" /> REMEASURE SELECTED PROFILE
           </button>
+
+          <div className="brand-panel p-4 text-left">
+             <label className="block text-[10px] brand-eyebrow font-black tracking-widest uppercase mb-2">Add measurement profile</label>
+             <div className="flex gap-2">
+                <input
+                   value={newProfileName}
+                   onChange={(event) => setNewProfileName(event.target.value)}
+                   placeholder="Kid, client, family..."
+                   className="brand-input h-12 min-w-0 flex-1 border rounded-2xl px-4 text-sm font-bold outline-none"
+                />
+                <button
+                   type="button"
+                   onClick={() => {
+                      if (!String(newProfileName || '').trim()) {
+                         setCustomerPortalStatus({ type: 'error', text: 'Enter a profile name first' });
+                         return;
+                      }
+                      const profileName = normalizeProfileName(newProfileName);
+                      setCustomerProfileName(profileName);
+                      startWizard({ profileName });
+                   }}
+                   disabled={systemBooting}
+                   className="brand-secondary h-12 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                >
+                   <UserPlus className="w-4 h-4" /> Add
+                </button>
+             </div>
+          </div>
+
           <button
              onClick={() => setCurrentStep('welcome')}
              className="brand-secondary w-full py-4 font-black rounded-2xl transition-all active:scale-95 text-xs uppercase"
@@ -2114,14 +2219,33 @@ function App() {
           <div className="relative">
              <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 brand-accent" />
              <input
-                type="password"
+                type={showCustomerPassword ? 'text' : 'password'}
                 value={customerPassword}
                 onChange={(event) => setCustomerPassword(event.target.value)}
                 placeholder="create or enter password"
-                className="brand-input w-full h-14 border rounded-2xl pl-11 pr-4 text-sm font-bold outline-none"
+                className="brand-input w-full h-14 border rounded-2xl pl-11 pr-12 text-sm font-bold outline-none"
                 autoComplete="current-password"
              />
+             <button
+                type="button"
+                aria-label={showCustomerPassword ? 'Hide password' : 'Show password'}
+                onClick={() => setShowCustomerPassword(prev => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 brand-icon-button flex items-center justify-center rounded-xl active:scale-95"
+             >
+                {showCustomerPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+             </button>
           </div>
+       </div>
+
+       <div className="w-full max-w-[300px] sm:max-w-sm mb-5">
+          <label className="block text-[10px] brand-eyebrow font-black tracking-widest uppercase mb-2">PROFILE NAME</label>
+          <input
+             value={customerProfileName}
+             onChange={(event) => setCustomerProfileName(event.target.value)}
+             placeholder="My nails, kid, client..."
+             className="brand-input w-full h-14 border rounded-2xl px-4 text-sm font-bold outline-none"
+             autoComplete="off"
+          />
        </div>
 
        <div className="brand-panel w-full max-w-[300px] sm:max-w-sm p-4 mb-5">
@@ -2175,7 +2299,7 @@ function App() {
           disabled={systemBooting}
           className={`brand-primary w-full max-w-[300px] sm:max-w-sm py-6 rounded-3xl font-black text-xl shadow-2xl transition-all active:scale-95 ${systemBooting ? 'grayscale' : ''}`}
        >
-          {systemBooting ? 'GETTING CAMERA READY...' : 'CREATE ACCOUNT & START'}
+          {systemBooting ? 'GETTING CAMERA READY...' : 'START MEASUREMENT PROFILE'}
        </button>
 
        <button
@@ -2183,7 +2307,7 @@ function App() {
           disabled={systemBooting || customerPortalStatus.type === 'loading'}
           className="brand-secondary mt-3 w-full max-w-[300px] sm:max-w-sm py-4 rounded-2xl font-black text-xs tracking-widest uppercase flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
        >
-          <RefreshCcw className="w-4 h-4" /> CHECK SAVED SIZES
+          <RefreshCcw className="w-4 h-4" /> MEASUREMENTS
        </button>
     </div>
   )
