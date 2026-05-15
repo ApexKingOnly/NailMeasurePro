@@ -8,10 +8,6 @@ const CAPTURE_LAYOUTS = {
     quarter: { x: 0.5, y: 0.3, r: 0.19 },
     nailBox: { x: 0.14, y: 0.42, w: 0.72, h: 0.5 },
   },
-  landscape: {
-    quarter: { x: 0.24, y: 0.5, r: 0.21 },
-    nailBox: { x: 0.47, y: 0.14, w: 0.18, h: 0.72 },
-  },
 };
 
 const parseModelIds = (value) => (
@@ -281,7 +277,7 @@ export default async function handler(req, res) {
       width: Number(body.width || 0),
       height: Number(body.height || 0),
     };
-    const captureLayout = CAPTURE_LAYOUTS[body.captureLayout] ? body.captureLayout : 'portrait';
+    const captureLayout = 'portrait';
 
     if (!imageBase64 || imageBase64.length > MAX_BASE64_LENGTH || !targetSize.width || !targetSize.height) {
       res.status(400).json({ ok: false, error: 'Valid base64 image, width, and height are required' });

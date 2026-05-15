@@ -351,10 +351,6 @@
   pointer-events: auto;
 }
 
-.live-layout-selector {
-  order: 0;
-}
-
 .live-shot-info {
   order: 1;
 }
@@ -610,65 +606,33 @@
 
   .live-info-panel {
     position: absolute !important;
-    bottom: max(12px, env(safe-area-inset-bottom));
-    width: min(260px, calc(100vw - 176px));
-    max-width: 260px !important;
+    left: 50%;
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 88px);
+    transform: translateX(-50%);
+    width: min(320px, calc(100vw - 176px));
+    max-width: 320px !important;
     padding: 10px 12px !important;
-    align-items: stretch !important;
-    gap: 8px !important;
+    align-items: center !important;
+    gap: 5px !important;
     border: 1px solid rgba(111, 53, 31, 0.18) !important;
     border-radius: 8px !important;
     box-shadow: 0 18px 42px rgba(19, 7, 4, 0.28);
     background: linear-gradient(135deg, rgba(255, 248, 238, 0.9), rgba(232, 183, 179, 0.82)) !important;
   }
 
-  .live-control-layer.landscape-left-hand .live-info-panel {
-    left: max(12px, env(safe-area-inset-left));
-    right: auto;
-  }
-
-  .live-control-layer.landscape-right-hand .live-info-panel {
-    right: max(12px, env(safe-area-inset-right));
-    left: auto;
-  }
-
   .live-capture-dock {
     position: absolute !important;
-    top: 50%;
-    transform: translateY(-50%);
+    left: 50%;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
     z-index: 45;
-  }
-
-  .live-control-layer.landscape-left-hand .live-capture-dock {
-    right: max(12px, env(safe-area-inset-right));
-    left: auto;
-  }
-
-  .live-control-layer.landscape-right-hand .live-capture-dock {
-    left: max(12px, env(safe-area-inset-left));
-    right: auto;
-  }
-
-  .live-layout-selector {
-    width: 100% !important;
-    max-width: none !important;
-    flex: 0 0 auto;
-  }
-
-  .live-layout-selector p {
-    display: none;
-  }
-
-  .live-layout-selector button {
-    height: 36px !important;
-    font-size: 8px !important;
   }
 
   .live-shot-info {
     width: 100% !important;
     max-width: none !important;
     flex: 0 0 auto;
-    text-align: left !important;
+    text-align: center !important;
     gap: 3px !important;
   }
 
@@ -690,22 +654,10 @@
 
 @media (orientation: landscape) and (max-height: 560px) and (max-width: 760px) {
   .live-info-panel {
-    width: min(220px, calc(100vw - 168px));
-    max-width: 220px !important;
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + 78px);
+    width: min(250px, calc(100vw - 156px));
+    max-width: 250px !important;
     padding: 8px 10px !important;
-  }
-
-  .live-layout-selector {
-    flex-basis: auto;
-    max-width: none !important;
-  }
-
-  .live-layout-selector > div:first-child {
-    margin-bottom: 4px !important;
-  }
-
-  .live-layout-selector > div:first-child span:last-child {
-    display: none;
   }
 
   .live-shot-info {
