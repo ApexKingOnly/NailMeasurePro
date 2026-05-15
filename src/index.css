@@ -342,6 +342,18 @@
   color: var(--liz-cocoa) !important;
 }
 
+.live-layout-selector {
+  order: 0;
+}
+
+.live-shot-info {
+  order: 1;
+}
+
+.live-capture-wrap {
+  order: 2;
+}
+
 .brand-live-badge {
   background: rgba(255, 248, 238, 0.9) !important;
   border-color: rgba(111, 53, 31, 0.2) !important;
@@ -594,9 +606,25 @@
     background: linear-gradient(90deg, rgba(255, 248, 238, 0.9), rgba(232, 183, 179, 0.88)) !important;
   }
 
+  .live-layout-selector {
+    width: 190px !important;
+    max-width: 190px !important;
+    flex: 0 0 190px;
+  }
+
+  .live-layout-selector p {
+    display: none;
+  }
+
+  .live-layout-selector button {
+    height: 36px !important;
+    font-size: 8px !important;
+  }
+
   .live-shot-info {
     width: auto !important;
-    max-width: 330px !important;
+    max-width: 210px !important;
+    flex: 1 1 180px;
     text-align: left !important;
     gap: 3px !important;
   }
@@ -611,6 +639,34 @@
     border-radius: 24px !important;
     flex: 0 0 auto;
   }
+
+  .live-capture-wrap {
+    flex: 0 0 auto;
+  }
+
+  .live-control-surface.landscape-right-hand .live-capture-wrap {
+    order: 0;
+  }
+
+  .live-control-surface.landscape-right-hand .live-layout-selector {
+    order: 1;
+  }
+
+  .live-control-surface.landscape-right-hand .live-shot-info {
+    order: 2;
+  }
+
+  .live-control-surface.landscape-left-hand .live-layout-selector {
+    order: 0;
+  }
+
+  .live-control-surface.landscape-left-hand .live-shot-info {
+    order: 1;
+  }
+
+  .live-control-surface.landscape-left-hand .live-capture-wrap {
+    order: 2;
+  }
 }
 
 @media (orientation: landscape) and (max-height: 560px) and (max-width: 760px) {
@@ -618,11 +674,35 @@
     right: max(10px, env(safe-area-inset-right));
     left: auto;
     transform: none;
-    width: min(330px, calc(100vw - 112px));
+    width: min(420px, calc(100vw - 96px));
     min-width: 0;
+    gap: 8px !important;
+  }
+
+  .live-layout-selector {
+    flex-basis: 135px;
+    max-width: 135px !important;
+  }
+
+  .live-layout-selector > div:first-child {
+    margin-bottom: 4px !important;
+  }
+
+  .live-layout-selector > div:first-child span:last-child {
+    display: none;
   }
 
   .live-shot-info {
-    max-width: 210px !important;
+    max-width: 95px !important;
+  }
+
+  .live-shot-info span:nth-of-type(n+3) {
+    display: none;
+  }
+
+  .live-capture-button {
+    width: 64px !important;
+    height: 64px !important;
+    border-radius: 22px !important;
   }
 }

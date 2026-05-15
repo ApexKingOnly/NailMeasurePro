@@ -42,7 +42,7 @@ const CUSTOMER_NAILSET_ENDPOINT = '/api/customer-nailsets';
 const CUSTOMER_LOGIN_ENDPOINT = '/api/customer-login';
 const NAIL_EDGE_HANDLE_DROP = 112;
 const ASSIST_FRAME_ZOOM = 1.25;
-const APP_VERSION = 'capture-layout-password-v1';
+const APP_VERSION = 'camera-layout-hand-v1';
 const TRAINING_STATUS_IDLE = { status: 'idle', label: '' };
 const CUSTOMER_SAVE_STATUS_IDLE = { status: 'idle', label: '' };
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -677,22 +677,6 @@ const formatCustomerDate = (value) => {
   return date.toLocaleString();
 };
 
-const getStoredCaptureLayout = () => {
-  try {
-    return getCaptureLayout(window.localStorage?.getItem('nailmeasure_capture_layout')).key;
-  } catch (error) {
-    return 'portrait';
-  }
-};
-
-const storeCaptureLayout = (layoutKey) => {
-  try {
-    window.localStorage?.setItem('nailmeasure_capture_layout', getCaptureLayout(layoutKey).key);
-  } catch (error) {
-    // Local storage is only for convenience.
-  }
-};
-
 const getStoredFitContext = () => {
   try {
     const parsed = JSON.parse(window.localStorage?.getItem('nailmeasure_fit_context') || '{}');
@@ -825,7 +809,7 @@ function App() {
   const [customerPortalStatus, setCustomerPortalStatus] = useState({ type: 'idle', text: '' })
   const [customerSessions, setCustomerSessions] = useState([])
   const [fitContext, setFitContext] = useState(getStoredFitContext)
-  const [captureLayout, setCaptureLayout] = useState(getStoredCaptureLayout)
+  const [captureLayout, setCaptureLayout] = useState('portrait')
   const [viewportSize, setViewportSize] = useState(() => ({
     width: window.innerWidth || 390,
     height: window.innerHeight || 844,
@@ -877,7 +861,6 @@ function App() {
   useEffect(() => { shotNumberRef.current = shotNumber }, [shotNumber])
   useEffect(() => { isStableSignalRef.current = isStableSignal }, [isStableSignal])
   useEffect(() => { storeFitContext(fitContext) }, [fitContext])
-  useEffect(() => { storeCaptureLayout(captureLayout) }, [captureLayout])
   useEffect(() => {
     const updateViewport = () => {
       setViewportSize({
@@ -929,7 +912,6 @@ function App() {
   const updateCaptureLayout = (layoutKey) => {
     const nextLayout = getCaptureLayout(layoutKey).key;
     setCaptureLayout(nextLayout);
-    storeCaptureLayout(nextLayout);
   }
 
   const loadCustomerPortal = async () => {
@@ -984,7 +966,7 @@ function App() {
     setCustomerEmail(normalizedEmail)
     storeCustomerEmail(normalizedEmail)
     setFitContext(normalizeFitContext(fitContext))
-    updateCaptureLayout(captureLayout)
+    setCaptureLayout('portrait')
     setShotNumber(1)
     setCurrentStep('wizard')
     setIsCameraReady(false)
@@ -1904,11 +1886,15 @@ function App() {
      );
   };
   const handSideLabel = shotNumber > 5 ? 'RIGHT HAND' : 'LEFT HAND';
+  const isRightHandStep = shotNumber > 5;
   const currentFingerName = steps[shotNumber - 1];
   const currentSavedMeasurement = getStoredMeasurement(results[currentFingerName]);
   const allFingersMeasured = steps.every(finger => results[finger]?.mm && results[finger]?.size);
   const orientationComparison = getOrientationPixelComparison(viewportSize.width, viewportSize.height);
   const activeLayoutMetrics = getGuideMetrics(viewportSize.width, viewportSize.height, captureLayout);
+  const liveHandLayoutClass = captureLayout === 'landscape'
+     ? (isRightHandStep ? 'landscape-right-hand' : 'landscape-left-hand')
+     : 'portrait-hand';
   const topNavigationControls = (
      <div className="live-nav-controls absolute top-4 left-4 z-[95] flex items-center gap-2">
         <button
@@ -1938,6 +1924,31 @@ function App() {
      >
         <Camera className={`w-9 h-9 scale-110 ${!isCameraReady && 'opacity-50'}`} strokeWidth={3} />
      </button>
+  );
+  const captureLayoutSelector = (
+     <div className="live-layout-selector w-full max-w-sm">
+        <div className="flex items-center justify-between gap-2 mb-2">
+           <span className="text-[9px] brand-eyebrow font-black tracking-widest uppercase">Camera position</span>
+           <span className="text-[9px] brand-accent font-black tracking-widest uppercase">{activeLayoutMetrics.quarterDiameter}px qtr</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+           {Object.values(CAPTURE_LAYOUTS).map(layout => (
+              <button
+                 key={layout.key}
+                 type="button"
+                 onClick={() => updateCaptureLayout(layout.key)}
+                 className={`h-10 rounded-xl border text-[10px] font-black uppercase tracking-widest active:scale-95 ${
+                    captureLayout === layout.key ? 'brand-primary' : 'brand-secondary'
+                 }`}
+              >
+                 {layout.label}
+              </button>
+           ))}
+        </div>
+        <p className="mt-2 text-[8px] brand-eyebrow font-black uppercase tracking-widest leading-relaxed">
+           Sideways: {orientationComparison.landscape.quarterDiameter}px qtr / {orientationComparison.landscape.nailBoxWidth}px nail box
+        </p>
+     </div>
   );
 
   if (currentStep === 'finish') return (
@@ -2087,42 +2098,6 @@ function App() {
        <h1 className="welcome-logo brand-logo mb-3">Nails By Liz</h1>
        <p className="welcome-tagline brand-eyebrow font-bold tracking-widest text-[10px] uppercase mb-6 sm:mb-10 opacity-80 text-center">Professional Nail Art Services</p>
        
-       <div className="brand-panel w-full max-w-[300px] sm:max-w-sm p-4 mb-5">
-          <div className="flex items-center justify-between gap-2 mb-3">
-             <span className="text-[9px] brand-eyebrow font-black tracking-widest uppercase">Camera position</span>
-             <span className="text-[9px] brand-accent font-black tracking-widest uppercase">{activeLayoutMetrics.quarterDiameter}px qtr</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 mb-3">
-             {Object.values(CAPTURE_LAYOUTS).map(layout => (
-                <button
-                   key={layout.key}
-                   type="button"
-                   onClick={() => updateCaptureLayout(layout.key)}
-                   className={`h-11 rounded-xl border text-[10px] font-black uppercase tracking-widest active:scale-95 ${
-                      captureLayout === layout.key ? 'brand-primary' : 'brand-secondary'
-                   }`}
-                >
-                   {layout.label}
-                </button>
-             ))}
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-[8px] font-black uppercase tracking-widest">
-             <div className="brand-tile p-2">
-                <div className="brand-eyebrow">Upright</div>
-                <div className="brand-heading">{orientationComparison.portrait.quarterDiameter}px qtr</div>
-                <div className="brand-accent">{orientationComparison.portrait.nailBoxWidth}px nail box</div>
-             </div>
-             <div className="brand-tile p-2">
-                <div className="brand-eyebrow">Sideways</div>
-                <div className="brand-heading">{orientationComparison.landscape.quarterDiameter}px qtr</div>
-                <div className="brand-accent">{orientationComparison.landscape.nailBoxWidth}px nail box</div>
-             </div>
-          </div>
-          <p className="mt-3 text-[8px] brand-eyebrow font-black uppercase tracking-widest leading-relaxed">
-             Sideways changes by {orientationComparison.delta.quarterDiameter >= 0 ? '+' : ''}{orientationComparison.delta.quarterDiameter}px quarter and {orientationComparison.delta.nailBoxWidth >= 0 ? '+' : ''}{orientationComparison.delta.nailBoxWidth}px nail width on this screen.
-          </p>
-       </div>
-
        <div className="welcome-measure-list brand-panel hidden sm:block w-full max-w-[300px] sm:max-w-sm p-5 sm:p-8 mb-8">
           <div className="flex items-center gap-4 mb-4">
              <div className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: BRAND_GUIDE.coin }} />
@@ -2408,7 +2383,8 @@ function App() {
        </div>
 
        {/* CONTROL SURFACE */}
-       <div className="live-control-surface brand-control-surface p-6 sm:p-10 border-t flex flex-col items-center justify-center gap-5 z-40">
+       <div className={`live-control-surface ${liveHandLayoutClass} brand-control-surface p-6 sm:p-10 border-t flex flex-col items-center justify-center gap-5 z-40`}>
+          {captureLayoutSelector}
           <div className="live-shot-info min-w-0 flex flex-col gap-1.5 text-center w-full max-w-sm">
              <span className="text-[10px] brand-eyebrow font-black tracking-[0.2em] uppercase opacity-80">{handSideLabel} {shotNumber}/10</span>
              <h3 className="text-xl sm:text-2xl font-black brand-heading leading-none uppercase truncate">{steps[shotNumber-1]}</h3>
@@ -2433,7 +2409,7 @@ function App() {
              )}
           </div>
 
-          <div className="flex items-center justify-center">
+          <div className="live-capture-wrap flex items-center justify-center">
              {captureControl}
           </div>
        </div>
