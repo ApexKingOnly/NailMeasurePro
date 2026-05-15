@@ -33,7 +33,7 @@ const CAPTURE_LAYOUTS = {
     label: 'Sideways',
     shortLabel: 'SIDEWAYS',
     quarter: { x: 0.24, y: 0.5, r: 0.21 },
-    nailBox: { x: 0.42, y: 0.16, w: 0.5, h: 0.68 },
+    nailBox: { x: 0.47, y: 0.14, w: 0.18, h: 0.72 },
   },
 };
 const AI_GUIDE_ENDPOINT = '/api/vision-detect';
@@ -42,7 +42,7 @@ const CUSTOMER_NAILSET_ENDPOINT = '/api/customer-nailsets';
 const CUSTOMER_LOGIN_ENDPOINT = '/api/customer-login';
 const NAIL_EDGE_HANDLE_DROP = 112;
 const ASSIST_FRAME_ZOOM = 1.25;
-const APP_VERSION = 'camera-layout-hand-v1';
+const APP_VERSION = 'side-capture-layout-v1';
 const TRAINING_STATUS_IDLE = { status: 'idle', label: '' };
 const CUSTOMER_SAVE_STATUS_IDLE = { status: 'idle', label: '' };
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -97,6 +97,10 @@ const getGuideMetrics = (width, height, layoutKey) => {
     nailBoxHeight: Math.round(nailBox.h),
   };
 };
+
+const getFingerTargetLabel = (layoutKey) => (
+  getCaptureLayout(layoutKey).key === 'landscape' ? 'vertical guide' : 'lower target'
+);
 
 const getOrientationPixelComparison = (viewportWidth, viewportHeight) => {
   const shortSide = Math.max(1, Math.min(viewportWidth, viewportHeight));
@@ -1029,7 +1033,7 @@ function App() {
     } else if (savedMeasurement) {
       setMessage(`Saved ${fingerName}; tap camera to retake`);
     } else {
-      setMessage(`Place ${fingerName} in lower target`);
+      setMessage(`Place ${fingerName} in ${getFingerTargetLabel(captureLayout)}`);
     }
   }
 
@@ -1366,6 +1370,7 @@ function App() {
           const activeLayout = captureLayout;
           const quarterTarget = getQuarterTarget(rect.width, rect.height, activeLayout);
           const nBox = getNailTargetBox(rect.width, rect.height, activeLayout);
+          const activeFingerTargetLabel = getFingerTargetLabel(activeLayout);
 
          const drawSurgicalHUD = () => {
              const w = rect.width;
@@ -1490,11 +1495,11 @@ function App() {
             setMeasurement(null);
          } else if (!viewHand) {
             setIsStableSignal(false);
-            setMessage(`Place ${steps[shotNumberRef.current - 1]} in lower target`);
+            setMessage(`Place ${steps[shotNumberRef.current - 1]} in ${activeFingerTargetLabel}`);
             setMeasurement(null);
          } else if (!fingerDetected) {
             setIsStableSignal(false);
-            setMessage(`Move ${steps[shotNumberRef.current - 1]} into lower box`);
+            setMessage(`Move ${steps[shotNumberRef.current - 1]} into ${activeFingerTargetLabel}`);
             setMeasurement(null);
          } else if (!levelDetected) {
             setIsStableSignal(false);
@@ -1586,7 +1591,7 @@ function App() {
       shotNumberRef.current = nextShotNumber;
       setAssistFrame(nextSavedFrame);
       setMeasurement(nextSavedMeasurement);
-      setMessage(nextSavedFrame ? `Review saved ${nextFingerName}` : `Place ${nextFingerName} in lower target`);
+      setMessage(nextSavedFrame ? `Review saved ${nextFingerName}` : `Place ${nextFingerName} in ${getFingerTargetLabel(captureLayout)}`);
       setCurrentStep('wizard');
       releaseAdvanceLock();
     } else {
@@ -1917,6 +1922,7 @@ function App() {
   );
   const captureControl = (
      <button
+        type="button"
         aria-label="Take snapshot for assisted measurement"
         onClick={startAssistMeasurement}
         disabled={!isCameraReady}
@@ -1946,7 +1952,7 @@ function App() {
            ))}
         </div>
         <p className="mt-2 text-[8px] brand-eyebrow font-black uppercase tracking-widest leading-relaxed">
-           Sideways: {orientationComparison.landscape.quarterDiameter}px qtr / {orientationComparison.landscape.nailBoxWidth}px nail box
+           Sideways: {orientationComparison.landscape.nailBoxWidth}x{orientationComparison.landscape.nailBoxHeight}px vertical guide
         </p>
      </div>
   );
@@ -2383,33 +2389,36 @@ function App() {
        </div>
 
        {/* CONTROL SURFACE */}
-       <div className={`live-control-surface ${liveHandLayoutClass} brand-control-surface p-6 sm:p-10 border-t flex flex-col items-center justify-center gap-5 z-40`}>
-          {captureLayoutSelector}
-          <div className="live-shot-info min-w-0 flex flex-col gap-1.5 text-center w-full max-w-sm">
-             <span className="text-[10px] brand-eyebrow font-black tracking-[0.2em] uppercase opacity-80">{handSideLabel} {shotNumber}/10</span>
-             <h3 className="text-xl sm:text-2xl font-black brand-heading leading-none uppercase truncate">{steps[shotNumber-1]}</h3>
-             {currentSavedMeasurement && (
-                <span className="text-[9px] brand-accent font-black tracking-widest uppercase">SAVED #{currentSavedMeasurement.size} / {currentSavedMeasurement.mm}mm</span>
-             )}
-             {cameraProfile && (
-                <span className="text-[8px] brand-eyebrow font-black tracking-widest uppercase">
-                   CAM {cameraProfile.width || videoDimsRef.current.w || '-'}x{cameraProfile.height || videoDimsRef.current.h || '-'} {cameraProfile.facingMode || cameraProfile.preferredFacingMode || ''}
+       <div className={`live-control-layer ${liveHandLayoutClass} brand-control-surface p-6 sm:p-10 border-t flex flex-col items-center justify-center gap-5 z-40`}>
+          <div className="live-info-panel flex flex-col items-center justify-center gap-5 w-full max-w-sm">
+             {captureLayoutSelector}
+             <div className="live-shot-info min-w-0 flex flex-col gap-1.5 text-center w-full max-w-sm">
+                <span className="text-[10px] brand-eyebrow font-black tracking-[0.2em] uppercase opacity-80">{handSideLabel} {shotNumber}/10</span>
+                <h3 className="text-xl sm:text-2xl font-black brand-heading leading-none uppercase truncate">{steps[shotNumber-1]}</h3>
+                {currentSavedMeasurement && (
+                   <span className="text-[9px] brand-accent font-black tracking-widest uppercase">SAVED #{currentSavedMeasurement.size} / {currentSavedMeasurement.mm}mm</span>
+                )}
+                {cameraProfile && (
+                   <span className="text-[8px] brand-eyebrow font-black tracking-widest uppercase">
+                      CAM {cameraProfile.width || videoDimsRef.current.w || '-'}x{cameraProfile.height || videoDimsRef.current.h || '-'} {cameraProfile.facingMode || cameraProfile.preferredFacingMode || ''}
+                   </span>
+                )}
+                <span className="text-[8px] brand-accent font-black tracking-widest uppercase">
+                   {getCaptureLayout(captureLayout).shortLabel} GUIDE / QTR {activeLayoutMetrics.quarterDiameter}px
                 </span>
-             )}
-             <span className="text-[8px] brand-accent font-black tracking-widest uppercase">
-                {getCaptureLayout(captureLayout).shortLabel} GUIDE / QTR {activeLayoutMetrics.quarterDiameter}px
-             </span>
-             {allFingersMeasured && (
-                <button
-                   onClick={() => setCurrentStep('finish')}
-                   className="brand-secondary mx-auto mt-1 px-4 py-2 rounded-xl text-[9px] font-black tracking-widest uppercase active:scale-95"
-                >
-                   Review Report
-                </button>
-             )}
+                {allFingersMeasured && (
+                   <button
+                      type="button"
+                      onClick={() => setCurrentStep('finish')}
+                      className="brand-secondary mx-auto mt-1 px-4 py-2 rounded-xl text-[9px] font-black tracking-widest uppercase active:scale-95"
+                   >
+                      Review Report
+                   </button>
+                )}
+             </div>
           </div>
 
-          <div className="live-capture-wrap flex items-center justify-center">
+          <div className="live-capture-dock flex items-center justify-center">
              {captureControl}
           </div>
        </div>

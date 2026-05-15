@@ -342,6 +342,15 @@
   color: var(--liz-cocoa) !important;
 }
 
+.live-control-layer {
+  pointer-events: auto;
+}
+
+.live-info-panel,
+.live-capture-dock {
+  pointer-events: auto;
+}
+
 .live-layout-selector {
   order: 0;
 }
@@ -350,7 +359,7 @@
   order: 1;
 }
 
-.live-capture-wrap {
+.live-capture-dock {
   order: 2;
 }
 
@@ -588,28 +597,62 @@
     gap: 5px !important;
   }
 
-  .live-control-surface {
+  .live-control-layer {
     position: absolute !important;
-    left: 50%;
-    bottom: max(10px, env(safe-area-inset-bottom));
-    transform: translateX(-50%);
-    width: min(520px, calc(100vw - 240px));
-    min-width: 360px;
+    inset: 0 !important;
+    display: block !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    pointer-events: none;
+  }
+
+  .live-info-panel {
+    position: absolute !important;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    width: min(260px, calc(100vw - 176px));
+    max-width: 260px !important;
     padding: 10px 12px !important;
-    flex-direction: row !important;
-    justify-content: center !important;
-    align-items: center !important;
-    gap: 12px !important;
+    align-items: stretch !important;
+    gap: 8px !important;
     border: 1px solid rgba(111, 53, 31, 0.18) !important;
     border-radius: 8px !important;
     box-shadow: 0 18px 42px rgba(19, 7, 4, 0.28);
-    background: linear-gradient(90deg, rgba(255, 248, 238, 0.9), rgba(232, 183, 179, 0.88)) !important;
+    background: linear-gradient(135deg, rgba(255, 248, 238, 0.9), rgba(232, 183, 179, 0.82)) !important;
+  }
+
+  .live-control-layer.landscape-left-hand .live-info-panel {
+    left: max(12px, env(safe-area-inset-left));
+    right: auto;
+  }
+
+  .live-control-layer.landscape-right-hand .live-info-panel {
+    right: max(12px, env(safe-area-inset-right));
+    left: auto;
+  }
+
+  .live-capture-dock {
+    position: absolute !important;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 45;
+  }
+
+  .live-control-layer.landscape-left-hand .live-capture-dock {
+    right: max(12px, env(safe-area-inset-right));
+    left: auto;
+  }
+
+  .live-control-layer.landscape-right-hand .live-capture-dock {
+    left: max(12px, env(safe-area-inset-left));
+    right: auto;
   }
 
   .live-layout-selector {
-    width: 190px !important;
-    max-width: 190px !important;
-    flex: 0 0 190px;
+    width: 100% !important;
+    max-width: none !important;
+    flex: 0 0 auto;
   }
 
   .live-layout-selector p {
@@ -622,9 +665,9 @@
   }
 
   .live-shot-info {
-    width: auto !important;
-    max-width: 210px !important;
-    flex: 1 1 180px;
+    width: 100% !important;
+    max-width: none !important;
+    flex: 0 0 auto;
     text-align: left !important;
     gap: 3px !important;
   }
@@ -640,48 +683,21 @@
     flex: 0 0 auto;
   }
 
-  .live-capture-wrap {
+  .live-capture-dock {
     flex: 0 0 auto;
-  }
-
-  .live-control-surface.landscape-right-hand .live-capture-wrap {
-    order: 0;
-  }
-
-  .live-control-surface.landscape-right-hand .live-layout-selector {
-    order: 1;
-  }
-
-  .live-control-surface.landscape-right-hand .live-shot-info {
-    order: 2;
-  }
-
-  .live-control-surface.landscape-left-hand .live-layout-selector {
-    order: 0;
-  }
-
-  .live-control-surface.landscape-left-hand .live-shot-info {
-    order: 1;
-  }
-
-  .live-control-surface.landscape-left-hand .live-capture-wrap {
-    order: 2;
   }
 }
 
 @media (orientation: landscape) and (max-height: 560px) and (max-width: 760px) {
-  .live-control-surface {
-    right: max(10px, env(safe-area-inset-right));
-    left: auto;
-    transform: none;
-    width: min(420px, calc(100vw - 96px));
-    min-width: 0;
-    gap: 8px !important;
+  .live-info-panel {
+    width: min(220px, calc(100vw - 168px));
+    max-width: 220px !important;
+    padding: 8px 10px !important;
   }
 
   .live-layout-selector {
-    flex-basis: 135px;
-    max-width: 135px !important;
+    flex-basis: auto;
+    max-width: none !important;
   }
 
   .live-layout-selector > div:first-child {
@@ -693,7 +709,7 @@
   }
 
   .live-shot-info {
-    max-width: 95px !important;
+    max-width: none !important;
   }
 
   .live-shot-info span:nth-of-type(n+3) {

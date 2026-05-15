@@ -10,7 +10,7 @@ const CAPTURE_LAYOUTS = {
   },
   landscape: {
     quarter: { x: 0.24, y: 0.5, r: 0.21 },
-    nailBox: { x: 0.42, y: 0.16, w: 0.5, h: 0.68 },
+    nailBox: { x: 0.47, y: 0.14, w: 0.18, h: 0.72 },
   },
 };
 
