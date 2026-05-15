@@ -132,6 +132,18 @@
   background: #130704;
 }
 
+.live-camera-shell {
+  height: 100dvh;
+  min-height: 100dvh;
+}
+
+@supports not (height: 100dvh) {
+  .live-camera-shell {
+    height: 100vh;
+    min-height: 100vh;
+  }
+}
+
 .brand-logo {
   color: var(--liz-cocoa);
   font-family: "Brush Script MT", "Segoe Script", "Lucida Handwriting", cursive;
@@ -515,5 +527,102 @@
     left: -70px;
     bottom: 16px;
     opacity: 0.48;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+  .live-camera-shell {
+    display: block !important;
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+
+  .live-vision-stage {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100%;
+    height: 100%;
+    min-height: 0 !important;
+    z-index: 0;
+  }
+
+  .live-nav-controls {
+    top: max(10px, env(safe-area-inset-top)) !important;
+    left: max(10px, env(safe-area-inset-left)) !important;
+  }
+
+  .live-nav-controls button {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 8px !important;
+  }
+
+  .live-camera-hud {
+    top: max(10px, env(safe-area-inset-top)) !important;
+    left: auto !important;
+    right: max(12px, env(safe-area-inset-right)) !important;
+    align-items: flex-end !important;
+    gap: 6px !important;
+  }
+
+  .live-camera-hud > div:first-child {
+    max-width: 310px;
+    padding: 5px 10px !important;
+    text-align: right;
+  }
+
+  .live-camera-hud .flex {
+    justify-content: flex-end;
+    gap: 5px !important;
+  }
+
+  .live-control-surface {
+    position: absolute !important;
+    left: 50%;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    width: min(520px, calc(100vw - 240px));
+    min-width: 360px;
+    padding: 10px 12px !important;
+    flex-direction: row !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 12px !important;
+    border: 1px solid rgba(111, 53, 31, 0.18) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 18px 42px rgba(19, 7, 4, 0.28);
+    background: linear-gradient(90deg, rgba(255, 248, 238, 0.9), rgba(232, 183, 179, 0.88)) !important;
+  }
+
+  .live-shot-info {
+    width: auto !important;
+    max-width: 330px !important;
+    text-align: left !important;
+    gap: 3px !important;
+  }
+
+  .live-shot-info h3 {
+    font-size: 1rem !important;
+  }
+
+  .live-capture-button {
+    width: 72px !important;
+    height: 72px !important;
+    border-radius: 24px !important;
+    flex: 0 0 auto;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 560px) and (max-width: 760px) {
+  .live-control-surface {
+    right: max(10px, env(safe-area-inset-right));
+    left: auto;
+    transform: none;
+    width: min(330px, calc(100vw - 112px));
+    min-width: 0;
+  }
+
+  .live-shot-info {
+    max-width: 210px !important;
   }
 }

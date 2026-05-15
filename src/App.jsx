@@ -1910,7 +1910,7 @@ function App() {
   const orientationComparison = getOrientationPixelComparison(viewportSize.width, viewportSize.height);
   const activeLayoutMetrics = getGuideMetrics(viewportSize.width, viewportSize.height, captureLayout);
   const topNavigationControls = (
-     <div className="absolute top-4 left-4 z-[95] flex items-center gap-2">
+     <div className="live-nav-controls absolute top-4 left-4 z-[95] flex items-center gap-2">
         <button
            aria-label="Go to previous finger"
            onClick={() => goToShot(shotNumberRef.current - 1)}
@@ -1934,7 +1934,7 @@ function App() {
         aria-label="Take snapshot for assisted measurement"
         onClick={startAssistMeasurement}
         disabled={!isCameraReady}
-        className={`w-24 h-24 brand-camera-button flex items-center justify-center rounded-[36px] transition-all shadow-2xl relative overflow-hidden ring-[12px] ${isCameraReady ? 'ring-amber-200/25 cursor-pointer active:scale-90 hover:brightness-105' : 'ring-white/10 cursor-not-allowed opacity-80'}`}
+        className={`live-capture-button w-24 h-24 brand-camera-button flex items-center justify-center rounded-[36px] transition-all shadow-2xl relative overflow-hidden ring-[12px] ${isCameraReady ? 'ring-amber-200/25 cursor-pointer active:scale-90 hover:brightness-105' : 'ring-white/10 cursor-not-allowed opacity-80'}`}
      >
         <Camera className={`w-9 h-9 scale-110 ${!isCameraReady && 'opacity-50'}`} strokeWidth={3} />
      </button>
@@ -2232,7 +2232,7 @@ function App() {
   )
 
   return (
-    <div className="brand-camera-shell fixed inset-0 flex flex-col font-sans overflow-hidden select-none">
+    <div className="live-camera-shell brand-camera-shell fixed inset-0 flex flex-col font-sans overflow-hidden select-none">
        {/* SHUTTER FLASH LAYER */}
        {shutterFlash && <div className="absolute inset-0 bg-white z-[100] animate-out fade-out duration-150" />}
        {topNavigationControls}
@@ -2341,7 +2341,7 @@ function App() {
        )}
 
        {/* HUD TOP: AI STATUS */}
-       <div className="absolute top-12 inset-x-0 flex flex-col items-center gap-3 z-30 pointer-events-none">
+       <div className="live-camera-hud absolute top-12 inset-x-0 flex flex-col items-center gap-3 z-30 pointer-events-none">
           <div className={`px-4 py-1.5 rounded-full border text-[10px] font-black tracking-widest uppercase shadow-xl ${isStableSignal ? 'brand-live-badge-on' : 'brand-live-badge'}`}>
              {message}
           </div>
@@ -2379,7 +2379,7 @@ function App() {
        </div>
 
        {/* VISION LAYER */}
-       <div className="relative flex-1 overflow-hidden bg-black flex items-center justify-center">
+       <div className="live-vision-stage relative flex-1 overflow-hidden bg-black flex items-center justify-center">
           <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover opacity-100 brightness-100 contrast-100 shadow-inner" playsInline muted />
           
           {/* Main Feed with High Contrast */}
@@ -2408,8 +2408,8 @@ function App() {
        </div>
 
        {/* CONTROL SURFACE */}
-       <div className="brand-control-surface p-6 sm:p-10 border-t flex flex-col items-center justify-center gap-5 z-40">
-          <div className="min-w-0 flex flex-col gap-1.5 text-center w-full max-w-sm">
+       <div className="live-control-surface brand-control-surface p-6 sm:p-10 border-t flex flex-col items-center justify-center gap-5 z-40">
+          <div className="live-shot-info min-w-0 flex flex-col gap-1.5 text-center w-full max-w-sm">
              <span className="text-[10px] brand-eyebrow font-black tracking-[0.2em] uppercase opacity-80">{handSideLabel} {shotNumber}/10</span>
              <h3 className="text-xl sm:text-2xl font-black brand-heading leading-none uppercase truncate">{steps[shotNumber-1]}</h3>
              {currentSavedMeasurement && (
