@@ -14,7 +14,7 @@ This is separate from AI detection and AI training data:
 
 1. Customer enters an email address before starting the sizing flow.
 2. Customer creates or enters an account password.
-3. Customer chooses the capture position: upright or sideways. The app sizes the quarter target and nail box differently for each orientation and stores the selected layout with the measurement.
+3. Customer uses the upright capture guide. The app stores camera metadata, guide geometry, and the corrected portrait layout with the measurement.
 4. Each accepted measurement is saved to a customer nail set session with camera/capture metadata and fit context.
 5. When all 10 fingers are measured, the same session is marked `complete`.
 6. Customer can return with email + password to view saved sizes and redo measurements.
@@ -146,6 +146,26 @@ Admin can:
 - Edit each finger's millimeter value, nail size, and admin note.
 
 Admin guide edits are written back to the customer measurement record and also logged to the training labels table with `source = 'admin-correction'` when the measurement has a saved photo.
+
+## Sizing Chart
+
+The current app sizing chart is:
+
+| Size | Width |
+| --- | --- |
+| 0 | 14mm |
+| 1 | 13mm |
+| 2 | 12mm |
+| 3 | 11mm |
+| 4 | 10.5mm |
+| 5 | 10mm |
+| 6 | 9.5mm |
+| 7 | 9mm |
+| 8 | 8.5mm |
+| 9 | 8mm |
+| 10 | 7.5mm |
+
+When a measurement lands between two tips, the saved nail size may be a range such as `8-9`. The larger physical tip is kept as the recommended size because it can usually be filed down, while the range preserves the uncertainty for the admin.
 
 ## Notes
 

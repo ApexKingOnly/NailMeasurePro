@@ -91,6 +91,12 @@ const normalizeMeasurement = (measurement) => {
     method: String(measurement?.method || 'assist'),
     quarterPixels,
     nailPixels,
+    adjustedMM: toFiniteNumber(measurement?.adjustedMM),
+    recommendedSize: measurement?.recommendedSize || null,
+    alternateSize: measurement?.alternateSize || null,
+    sizeRange: measurement?.sizeRange || null,
+    isBetween: Boolean(measurement?.isBetween),
+    sizing: measurement?.sizing || null,
   };
 };
 

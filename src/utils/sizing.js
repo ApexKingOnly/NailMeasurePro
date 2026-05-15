@@ -5,17 +5,19 @@
  */
 
 const QUARTER_MM = 24.26;
+const SIZE_LOCK_TOLERANCE_MM = 0.08;
+const SIZE_SAFETY_BUFFER_MM = 0;
 
 export const NAIL_FIT_PROFILES = [
   { key: 'standard', label: 'Standard fit', adjustmentMm: 0 },
-  { key: 'runs-narrow', label: 'Runs narrow', adjustmentMm: 0.5 },
-  { key: 'runs-wide', label: 'Runs wide', adjustmentMm: -0.5 },
+  { key: 'runs-narrow', label: 'Runs narrow', adjustmentMm: 0.25 },
+  { key: 'runs-wide', label: 'Runs wide', adjustmentMm: -0.25 },
 ];
 
 export const NAIL_BED_CURVES = [
-  { key: 'flat', label: 'Flat nail bed', adjustmentMm: 0.5 },
-  { key: 'medium', label: 'Medium curve', adjustmentMm: 1.0 },
-  { key: 'rounded', label: 'Rounded nail bed', adjustmentMm: 1.5 },
+  { key: 'flat', label: 'Flat nail bed', adjustmentMm: 0 },
+  { key: 'medium', label: 'Medium curve', adjustmentMm: 0 },
+  { key: 'rounded', label: 'Rounded nail bed', adjustmentMm: 0.2 },
 ];
 
 export const DEFAULT_FIT_CONTEXT = {
@@ -24,20 +26,21 @@ export const DEFAULT_FIT_CONTEXT = {
   manufacturer: 'Nails By Liz default',
 };
 
-// Standard sizing chart (mm -> Size ID)
-// Based on typical press-on nail width ranges
-const SIZING_CHART = [
-  { size: '00', mm: 18.0 },
-  { size: '0', mm: 16.0 },
-  { size: '1', mm: 15.0 },
-  { size: '2', mm: 14.0 },
-  { size: '3', mm: 13.0 },
-  { size: '4', mm: 12.0 },
-  { size: '5', mm: 11.0 },
-  { size: '6', mm: 10.0 },
+// Nails By Liz press-on tip widths, ordered largest to smallest.
+// Some manufacturers vary by shape; this chart uses the supplied default
+// widths and returns ranges instead of hard-snapping between sizes.
+export const SIZING_CHART = [
+  { size: '0', mm: 14.0 },
+  { size: '1', mm: 13.0 },
+  { size: '2', mm: 12.0 },
+  { size: '3', mm: 11.0 },
+  { size: '4', mm: 10.5 },
+  { size: '5', mm: 10.0 },
+  { size: '6', mm: 9.5 },
   { size: '7', mm: 9.0 },
-  { size: '8', mm: 8.0 },
-  { size: '9', mm: 7.0 }
+  { size: '8', mm: 8.5, alternateMm: [7.0] },
+  { size: '9', mm: 8.0 },
+  { size: '10', mm: 7.5 }
 ];
 
 const findFitProfile = (key) => (
@@ -58,7 +61,7 @@ export const getFitAdjustmentMM = (fitContext = DEFAULT_FIT_CONTEXT) => {
   const normalized = normalizeFitContext(fitContext);
   const profile = findFitProfile(normalized.productProfile);
   const curve = findNailBedCurve(normalized.nailBedCurve);
-  return profile.adjustmentMm + curve.adjustmentMm;
+  return profile.adjustmentMm + curve.adjustmentMm + SIZE_SAFETY_BUFFER_MM;
 };
 
 export const getAdjustedNailWidthMM = (mm, fitContext = DEFAULT_FIT_CONTEXT) => {
@@ -76,27 +79,146 @@ export const calculateMM = (pixelWidth, quarterPixels) => {
   return pixelWidth * ratio;
 };
 
+const getPressOnWidthRange = () => {
+  const widths = SIZING_CHART.map(item => item.mm);
+  return {
+    minMM: Math.min(...widths) - 0.25,
+    maxMM: Math.max(...widths) + 0.25,
+  };
+};
+
+export const compareToPressOnRange = (adjustedMM) => {
+  const width = Number(adjustedMM);
+  const range = getPressOnWidthRange();
+  if (!Number.isFinite(width) || width <= 0) {
+    return { ...range, status: 'invalid', warning: 'Measured width unavailable' };
+  }
+  if (width < range.minMM) {
+    return { ...range, status: 'below-range', warning: 'Below the default press-on range; verify nail guide placement or product shape' };
+  }
+  if (width > range.maxMM) {
+    return { ...range, status: 'above-range', warning: 'Above the default press-on range; verify quarter calibration and guide placement' };
+  }
+  return { ...range, status: 'in-range', warning: '' };
+};
+
+export const getNailSizeRecommendation = (mm, fitContext = DEFAULT_FIT_CONTEXT) => {
+  const rawMM = Number(mm);
+  if (!Number.isFinite(rawMM) || rawMM < 5) {
+    return {
+      size: 'N/A',
+      recommendedSize: null,
+      alternateSize: null,
+      sizeRange: null,
+      isBetween: false,
+      rawMM: Number.isFinite(rawMM) ? rawMM : 0,
+      adjustedMM: 0,
+      fitAdjustmentMM: getFitAdjustmentMM(fitContext),
+      rangeCheck: compareToPressOnRange(0),
+    };
+  }
+
+  const adjustedMM = getAdjustedNailWidthMM(rawMM, fitContext);
+  const rangeCheck = compareToPressOnRange(adjustedMM);
+
+  if (adjustedMM >= SIZING_CHART[0].mm) {
+    return {
+      size: SIZING_CHART[0].size,
+      recommendedSize: SIZING_CHART[0].size,
+      alternateSize: null,
+      sizeRange: SIZING_CHART[0].size,
+      isBetween: false,
+      rawMM,
+      adjustedMM,
+      fitAdjustmentMM: getFitAdjustmentMM(fitContext),
+      rangeCheck,
+    };
+  }
+
+  const last = SIZING_CHART[SIZING_CHART.length - 1];
+  if (adjustedMM <= last.mm) {
+    return {
+      size: last.size,
+      recommendedSize: last.size,
+      alternateSize: null,
+      sizeRange: last.size,
+      isBetween: false,
+      rawMM,
+      adjustedMM,
+      fitAdjustmentMM: getFitAdjustmentMM(fitContext),
+      rangeCheck,
+    };
+  }
+
+  for (let index = 0; index < SIZING_CHART.length - 1; index += 1) {
+    const largerTip = SIZING_CHART[index];
+    const smallerTip = SIZING_CHART[index + 1];
+
+    if (adjustedMM <= largerTip.mm && adjustedMM >= smallerTip.mm) {
+      const largerDiff = Math.abs(adjustedMM - largerTip.mm);
+      const smallerDiff = Math.abs(adjustedMM - smallerTip.mm);
+
+      if (largerDiff <= SIZE_LOCK_TOLERANCE_MM) {
+        return {
+          size: largerTip.size,
+          recommendedSize: largerTip.size,
+          alternateSize: smallerTip.size,
+          sizeRange: `${largerTip.size}-${smallerTip.size}`,
+          isBetween: false,
+          rawMM,
+          adjustedMM,
+          fitAdjustmentMM: getFitAdjustmentMM(fitContext),
+          rangeCheck,
+        };
+      }
+
+      if (smallerDiff <= SIZE_LOCK_TOLERANCE_MM) {
+        return {
+          size: smallerTip.size,
+          recommendedSize: smallerTip.size,
+          alternateSize: largerTip.size,
+          sizeRange: `${largerTip.size}-${smallerTip.size}`,
+          isBetween: false,
+          rawMM,
+          adjustedMM,
+          fitAdjustmentMM: getFitAdjustmentMM(fitContext),
+          rangeCheck,
+        };
+      }
+
+      return {
+        size: `${largerTip.size}-${smallerTip.size}`,
+        recommendedSize: largerTip.size,
+        alternateSize: smallerTip.size,
+        sizeRange: `${largerTip.size}-${smallerTip.size}`,
+        isBetween: true,
+        rawMM,
+        adjustedMM,
+        fitAdjustmentMM: getFitAdjustmentMM(fitContext),
+        rangeCheck,
+      };
+    }
+  }
+
+  return {
+    size: last.size,
+    recommendedSize: last.size,
+    alternateSize: null,
+    sizeRange: last.size,
+    isBetween: false,
+    rawMM,
+    adjustedMM,
+    fitAdjustmentMM: getFitAdjustmentMM(fitContext),
+    rangeCheck,
+  };
+};
+
 /**
  * Maps MM to nearest press-on nail size
  * Includes a product-fit and nail-bed curvature adjustment.
  */
 export const mmToNailSize = (mm, fitContext = DEFAULT_FIT_CONTEXT) => {
-  if (!mm || mm < 5) return 'N/A';
-  const adjustedMM = getAdjustedNailWidthMM(mm, fitContext);
-
-  // Find the closest size or the next size up
-  let bestMatch = SIZING_CHART[0];
-  let minDiff = Math.abs(adjustedMM - SIZING_CHART[0].mm);
-
-  for (let i = 1; i < SIZING_CHART.length; i++) {
-    const diff = Math.abs(adjustedMM - SIZING_CHART[i].mm);
-    if (diff < minDiff) {
-      minDiff = diff;
-      bestMatch = SIZING_CHART[i];
-    }
-  }
-
-  return bestMatch.size;
+  return getNailSizeRecommendation(mm, fitContext).size;
 };
 
 /**
@@ -122,7 +244,7 @@ export const calculateFingerWidthPixels = (hand, fingerIndex, canvasWidth, canva
 
 export const getFullSizing = (pixelWidth, quarterPixels, handLandmarks, canvasWidth, canvasHeight, fitContext = DEFAULT_FIT_CONTEXT) => {
   const mm = calculateMM(pixelWidth, quarterPixels);
-  const size = mmToNailSize(mm, fitContext);
+  const recommendation = getNailSizeRecommendation(mm, fitContext);
   
   let guidance = "Position Target...";
   let isStable = false;
@@ -146,7 +268,13 @@ export const getFullSizing = (pixelWidth, quarterPixels, handLandmarks, canvasWi
 
   return {
     mm: mm?.toFixed?.(2) || "0.00",
-    size: size || "N/A",
+    size: recommendation.size || "N/A",
+    recommendedSize: recommendation.recommendedSize,
+    alternateSize: recommendation.alternateSize,
+    sizeRange: recommendation.sizeRange,
+    adjustedMM: recommendation.adjustedMM?.toFixed?.(2) || "0.00",
+    isBetween: recommendation.isBetween,
+    rangeCheck: recommendation.rangeCheck,
     guidance: guidance || "Initializing...",
     isStable: isStable || false
   };

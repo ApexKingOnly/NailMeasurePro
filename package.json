@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "node scripts/ensure-opencv.mjs && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:sizing": "node scripts/test-sizing.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.14",

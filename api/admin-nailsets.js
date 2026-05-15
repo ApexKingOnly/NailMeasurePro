@@ -165,6 +165,7 @@ export default async function handler(req, res) {
       const guide = normalizeGuide(body.guide);
       const quarterPixels = toFiniteNumber(body.quarterPixels);
       const nailPixels = toFiniteNumber(body.nailPixels);
+      const sizing = body.sizing && typeof body.sizing === 'object' ? body.sizing : null;
 
       if (!measurementId || !size || mm === null || mm <= 0) {
         res.status(400).json({ ok: false, configured: true, error: 'Valid measurementId, size, and mm are required' });
@@ -232,6 +233,7 @@ export default async function handler(req, res) {
               method: 'admin-correction',
               quarterPixels: updateResult.data.quarter_pixels,
               nailPixels: updateResult.data.nail_pixels,
+              sizing,
             },
             source: 'admin-correction',
             app_version: 'admin-portal-v1',

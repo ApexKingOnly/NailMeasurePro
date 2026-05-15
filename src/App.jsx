@@ -4,12 +4,11 @@ import {
   DEFAULT_FIT_CONTEXT,
   NAIL_BED_CURVES,
   NAIL_FIT_PROFILES,
-  getAdjustedNailWidthMM,
   getFullSizing,
+  getNailSizeRecommendation,
   normalizeFitContext,
   calculateFingerWidthPixels,
   calculateMM,
-  mmToNailSize,
 } from './utils/sizing'
 import AdminPortal from './AdminPortal.jsx'
 import BrandDecor from './BrandArtwork.jsx'
@@ -560,9 +559,20 @@ const getAssistMeasurement = (frame) => {
   const nailPixels = Math.hypot(nail.right.x - nail.left.x, nail.right.y - nail.left.y);
   const mm = calculateMM(nailPixels, quarterPixels);
   const fitContext = normalizeFitContext(frame.fitContext || DEFAULT_FIT_CONTEXT);
-  const size = mmToNailSize(mm, fitContext);
+  const sizing = getNailSizeRecommendation(mm, fitContext);
+  const size = sizing.size;
 
   if (!Number.isFinite(mm) || mm <= 0 || size === 'N/A') return null;
+
+  const baseQuality = getCaptureQuality(frame);
+  const captureQuality = {
+    ...baseQuality,
+    warnings: [
+      ...(baseQuality.warnings || []),
+      sizing.rangeCheck?.warning,
+    ].filter(Boolean),
+    sizing,
+  };
 
   return {
     mm: mm.toFixed(2),
@@ -570,9 +580,14 @@ const getAssistMeasurement = (frame) => {
     method: 'assist',
     quarterPixels,
     nailPixels,
-    adjustedMM: getAdjustedNailWidthMM(mm, fitContext).toFixed(2),
+    adjustedMM: sizing.adjustedMM.toFixed(2),
+    recommendedSize: sizing.recommendedSize,
+    alternateSize: sizing.alternateSize,
+    sizeRange: sizing.sizeRange,
+    isBetween: sizing.isBetween,
+    sizing,
     fitContext,
-    captureQuality: getCaptureQuality(frame),
+    captureQuality,
   };
 };
 
@@ -621,6 +636,11 @@ const getStoredMeasurement = (result) => {
     quarterPixels: result.quarterPixels,
     nailPixels: result.nailPixels,
     adjustedMM: result.adjustedMM,
+    recommendedSize: result.recommendedSize,
+    alternateSize: result.alternateSize,
+    sizeRange: result.sizeRange,
+    isBetween: result.isBetween,
+    sizing: cloneJson(result.sizing),
     fitContext: result.fitContext ? normalizeFitContext(result.fitContext) : null,
     captureQuality: cloneJson(result.captureQuality),
   };
@@ -654,6 +674,13 @@ const formatCustomerDate = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Saved session';
   return date.toLocaleString();
+};
+
+const formatSizeDisplay = (size, { compact = false } = {}) => {
+  const value = String(size || '').trim();
+  if (!value) return compact ? '-' : 'Size -';
+  if (value.includes('-')) return compact ? value : `Between ${value}`;
+  return compact ? `#${value}` : `Size ${value}`;
 };
 
 const getStoredFitContext = () => {
@@ -705,6 +732,11 @@ const buildTrainingLabelPayload = ({ frame, measurement, fingerName, shotNumber,
       quarterPixels: measurement.quarterPixels,
       nailPixels: measurement.nailPixels,
       adjustedMM: Number(measurement.adjustedMM),
+      recommendedSize: measurement.recommendedSize || null,
+      alternateSize: measurement.alternateSize || null,
+      sizeRange: measurement.sizeRange || null,
+      isBetween: Boolean(measurement.isBetween),
+      sizing: cloneJson(measurement.sizing),
       fitContext: normalizeFitContext(measurement.fitContext || frame.fitContext || DEFAULT_FIT_CONTEXT),
       captureQuality: cloneJson(measurement.captureQuality || frame.quality || getCaptureQuality(frame)),
     },
@@ -736,6 +768,11 @@ const buildCustomerNailsetPayload = ({ customerEmail, password, fitContext, sess
         quarterPixels: result.quarterPixels,
         nailPixels: result.nailPixels,
         adjustedMM: result.adjustedMM,
+        recommendedSize: result.recommendedSize,
+        alternateSize: result.alternateSize,
+        sizeRange: result.sizeRange,
+        isBetween: result.isBetween,
+        sizing: cloneJson(result.sizing),
         fitContext: normalizeFitContext(result.fitContext || normalizedFitContext),
         captureQuality: cloneJson(result.captureQuality),
         guide: cloneAssistGuide(result.frame?.guide),
@@ -746,7 +783,7 @@ const buildCustomerNailsetPayload = ({ customerEmail, password, fitContext, sess
               height: result.frame.height,
               zoom: result.frame.zoom || ASSIST_FRAME_ZOOM,
               camera: cloneJson(result.frame.camera),
-              quality: cloneJson(result.frame.quality || result.captureQuality),
+              quality: cloneJson(result.captureQuality || result.frame.quality),
               fitContext: normalizeFitContext(result.frame.fitContext || result.fitContext || normalizedFitContext),
               captureLayout: getCaptureLayout(result.frame.captureLayout).key,
             }
@@ -1481,7 +1518,7 @@ function App() {
 
             if (hasSizing) {
                setIsStableSignal(true);
-               setMessage(`Size ${sizing.size} ready`);
+               setMessage(`${formatSizeDisplay(sizing.size)} ready`);
                setMeasurement(prev => (
                   prev?.mm === sizing.mm && prev?.size === sizing.size
                      ? prev
@@ -1926,7 +1963,7 @@ function App() {
                 {steps.slice(0, 5).map(f => (
                    <div key={f} className="brand-tile flex flex-col items-center p-2">
                       <span className="text-[7px] brand-eyebrow font-bold mb-1 truncate w-full uppercase">{f.replace('Left ', '')}</span>
-                      <span className="text-sm font-black brand-heading leading-none">#{results[f]?.size || '0'}</span>
+                      <span className="text-sm font-black brand-heading leading-none">{formatSizeDisplay(results[f]?.size, { compact: true })}</span>
                       <span className="text-[7px] brand-accent font-black mt-1 leading-none">{results[f]?.mm}mm</span>
                    </div>
                 ))}
@@ -1942,7 +1979,7 @@ function App() {
                 {steps.slice(5, 10).map(f => (
                    <div key={f} className="brand-tile flex flex-col items-center p-2">
                       <span className="text-[7px] brand-eyebrow font-bold mb-1 truncate w-full uppercase">{f.replace('Right ', '')}</span>
-                      <span className="text-sm font-black brand-heading leading-none">#{results[f]?.size || '0'}</span>
+                      <span className="text-sm font-black brand-heading leading-none">{formatSizeDisplay(results[f]?.size, { compact: true })}</span>
                       <span className="text-[7px] brand-accent font-black mt-1 leading-none">{results[f]?.mm}mm</span>
                    </div>
                 ))}
@@ -1960,7 +1997,7 @@ function App() {
 
           <button 
              onClick={() => {
-                const text = steps.map(f => `${f}: Size ${results[f]?.size} (${results[f]?.mm}mm)`).join('\n');
+                const text = steps.map(f => `${f}: ${formatSizeDisplay(results[f]?.size)} (${results[f]?.mm}mm)`).join('\n');
                 navigator.clipboard.writeText(`NAILS BY LIZ SIZING REPORT:\n${text}`);
                 alert("Nail report copied to clipboard.");
              }}
@@ -2003,7 +2040,7 @@ function App() {
                    {(session.measurements || []).map(measurement => (
                       <div key={measurement.id || `${session.session_id}-${measurement.finger_name}`} className="brand-tile p-3">
                          <div className="text-[8px] brand-eyebrow font-black uppercase tracking-widest truncate">{measurement.finger_name}</div>
-                         <div className="text-lg font-black brand-heading leading-none mt-1">#{measurement.nail_size}</div>
+                         <div className="text-lg font-black brand-heading leading-none mt-1">{formatSizeDisplay(measurement.nail_size, { compact: true })}</div>
                          <div className="text-[9px] brand-accent font-black">{measurement.measurement_mm}mm</div>
                       </div>
                    ))}
@@ -2176,7 +2213,7 @@ function App() {
                 </div>
                 <div className="text-right shrink-0">
                    <div className="text-[10px] brand-eyebrow font-black tracking-widest uppercase">SIZE</div>
-                   <div className="brand-measure-readout text-3xl font-black leading-none">#{assistMeasurement?.size || '-'}</div>
+                   <div className="brand-measure-readout text-3xl font-black leading-none">{formatSizeDisplay(assistMeasurement?.size, { compact: true })}</div>
                    <div className="text-[10px] brand-eyebrow font-black">{assistMeasurement?.mm || '0.00'}mm</div>
                    {assistMeasurement?.adjustedMM && (
                       <div className="text-[9px] brand-accent font-black">{assistMeasurement.adjustedMM}mm fit</div>
@@ -2293,7 +2330,7 @@ function App() {
 
           {isStableSignal && measurement && (
              <div className="brand-live-badge-on px-5 py-1 rounded-full font-black text-[10px] shadow-xl animate-in fade-in slide-in-from-top-2 border-2">
-                SIZE {measurement.size} READY
+                {formatSizeDisplay(measurement.size).toUpperCase()} READY
              </div>
           )}
        </div>
@@ -2334,7 +2371,7 @@ function App() {
                 <span className="text-[10px] brand-eyebrow font-black tracking-[0.2em] uppercase opacity-80">{handSideLabel} {shotNumber}/10</span>
                 <h3 className="text-xl sm:text-2xl font-black brand-heading leading-none uppercase truncate">{steps[shotNumber-1]}</h3>
                 {currentSavedMeasurement && (
-                   <span className="text-[9px] brand-accent font-black tracking-widest uppercase">SAVED #{currentSavedMeasurement.size} / {currentSavedMeasurement.mm}mm</span>
+                   <span className="text-[9px] brand-accent font-black tracking-widest uppercase">SAVED {formatSizeDisplay(currentSavedMeasurement.size)} / {currentSavedMeasurement.mm}mm</span>
                 )}
                 {cameraProfile && (
                    <span className="text-[8px] brand-eyebrow font-black tracking-widest uppercase">

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronRight, KeyRound, LogOut, Power, Save, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
-import { calculateMM, mmToNailSize } from './utils/sizing.js';
+import { calculateMM, getNailSizeRecommendation } from './utils/sizing.js';
 import BrandDecor from './BrandArtwork.jsx';
 
 const ADMIN_TOKEN_KEY = 'nailmeasure_admin_token';
@@ -45,6 +45,12 @@ const formatDate = (value) => {
   return date.toLocaleString();
 };
 
+const formatSizeDisplay = (size) => {
+  const value = String(size || '').trim();
+  if (!value) return 'size -';
+  return value.includes('-') ? `between ${value}` : `size ${value}`;
+};
+
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 const cloneGuide = (guide) => {
@@ -67,13 +73,20 @@ const getGuideMeasurement = (guide, fitContext = null) => {
     Number(guide.nail.right.y) - Number(guide.nail.left.y),
   );
   const mm = calculateMM(nailPixels, quarterPixels);
-  const size = mmToNailSize(mm, fitContext || undefined);
+  const sizing = getNailSizeRecommendation(mm, fitContext || undefined);
+  const size = sizing.size;
 
   if (!Number.isFinite(mm) || mm <= 0 || size === 'N/A') return null;
 
   return {
     mm: mm.toFixed(2),
     size,
+    adjustedMM: sizing.adjustedMM.toFixed(2),
+    recommendedSize: sizing.recommendedSize,
+    alternateSize: sizing.alternateSize,
+    sizeRange: sizing.sizeRange,
+    isBetween: sizing.isBetween,
+    sizing,
     quarterPixels,
     nailPixels,
   };
@@ -373,6 +386,11 @@ function AdminPortal() {
           ? {
               mm: measurementResult.mm,
               size: measurementResult.size,
+              recommendedSize: measurementResult.recommendedSize,
+              alternateSize: measurementResult.alternateSize,
+              sizeRange: measurementResult.sizeRange,
+              isBetween: measurementResult.isBetween,
+              sizing: measurementResult.sizing,
               quarterPixels: measurementResult.quarterPixels,
               nailPixels: measurementResult.nailPixels,
             }
@@ -402,6 +420,7 @@ function AdminPortal() {
     const nextGuide = draft.guide ?? measurement.guide ?? null;
     const nextQuarterPixels = draft.quarterPixels ?? measurement.quarter_pixels ?? null;
     const nextNailPixels = draft.nailPixels ?? measurement.nail_pixels ?? null;
+    const nextSizing = draft.sizing ?? null;
 
     setLoading(true);
     setStatus({ type: 'loading', text: 'Saving measurement edit' });
@@ -421,6 +440,7 @@ function AdminPortal() {
           guide: nextGuide,
           quarterPixels: nextQuarterPixels,
           nailPixels: nextNailPixels,
+          sizing: nextSizing,
         }),
       });
       const data = await response.json();
@@ -527,7 +547,7 @@ function AdminPortal() {
           </svg>
         </div>
         <div className={`mt-2 text-[10px] font-black uppercase tracking-widest ${isDragging ? 'brand-accent' : 'brand-eyebrow'}`}>
-          {measured ? `${measured.mm}mm / size ${measured.size}` : 'Adjust guides'}
+          {measured ? `${measured.mm}mm / ${formatSizeDisplay(measured.size)}` : 'Adjust guides'}
         </div>
       </div>
     );
